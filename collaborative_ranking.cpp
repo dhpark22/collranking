@@ -23,7 +23,7 @@
 #include <iostream>
 #include <fstream>
 #include "collaborative_ranking.h"
-#include "linear.h"
+#include "liblinear-1.94/linear.h"
 
 using namespace std;
 
@@ -38,7 +38,7 @@ class Problem {
 	vector<comparison> comparisons_test;			// vector stores testing comparison data
 
 	void de_allocate();					// check if U, V has been allocated
-	bool sgd_step(const comparison &comp, const double step_size);
+	bool sgd_step(const int &idx, const double step_size);
 
 	public:
 		Problem(int, int);					// default constructor
@@ -212,14 +212,14 @@ void Problem::alt_rankSVM () {
 	}
 }
 
-bool Problem::sgd_step(const comparison &comp, const double step_size) {
-	double *user_vec  = &U[comp.user_id * rank];
-	double *item1_vec = &V[comp.item1_id * rank];
-	double *item2_vec = &V[comp.item2_id * rank];
+bool Problem::sgd_step(const int &idx, const double step_size) {
+	double *user_vec  = &U[g.ucmp[idx].user_id * rank];
+	double *item1_vec = &V[g.ucmp[idx].item1_id * rank];
+	double *item2_vec = &V[g.ucmp[idx].item2_id * rank];
 
-    int n_comps_user  = n_comps_by_user[comp.user_id];
-    int n_comps_item1 = n_comps_by_item[comp.item1_id];
-    int n_comps_item2 = n_comps_by_item[comp.item2_id];
+    int n_comps_user  = n_comps_by_user[g.ucmp[idx].user_id];
+    int n_comps_item1 = n_comps_by_item[g.ucmp[idx].item1_id];
+    int n_comps_item2 = n_comps_by_item[g.ucmp[idx].item2_id];
 
 	double err = 1.;
 	for(int k=0; k<rank; k++) err -= user_vec[k] * (item1_vec[k] - item2_vec[k]);
@@ -256,7 +256,7 @@ void Problem::run_sgd_random() {
 	for(int iter=1; iter<n_iter; iter++) {
 		int idx = (int)((double)rand() * (double)n_train_comps / (double)RAND_MAX);
 
-		sgd_step(comparisons_train[idx], alpha / (1. + beta/(double)iter));
+		sgd_step(idx, alpha / (1. + beta/(double)iter));
 
 		double ndcg = compute_ndcg();
 		double test_err = compute_testerror();
@@ -277,7 +277,7 @@ void Problem::run_sgd_nomad() {
 	for(int iter=1; iter<n_iter; iter++) {
 		int idx = (int)((double)rand() * (double)n_train_comps / (double)RAND_MAX);
 
-		sgd_step(comparisons_train[idx], alpha / (1. + beta/(double)iter));
+		sgd_step(idx, alpha / (1. + beta/(double)iter));
 
 		double ndcg = compute_ndcg();
 		double test_err = compute_testerror();
