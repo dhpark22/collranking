@@ -9,7 +9,7 @@
 // [3b] solve the problem with stochasitic gradient descent in hogwild style
 // [3c] solve the problem with stochastic gradient descent in nomad style
 //
-// Compile: g++ -std=C++11 -O3 -g -fopenmp collaborative_ranking.cpp
+// Compile: g++ -std=c++11 -O3 -g -fopenmp collaborative_ranking.cpp
 // Run: ./a.out [rating_file] [rating_format] [graph_output] [num_partitions]
 
 #include <omp.h>
