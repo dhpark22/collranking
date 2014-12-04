@@ -50,12 +50,14 @@ struct Node {
 	int degree;
 	map<int, int> neighbors;
 	Node(): degree(0) {};
-	void add_neighbor(int i) {
+	int add_neighbor(int i) {
 		if( neighbors.find(i) == neighbors.end() ) {
 			neighbors.insert ( pair<int, int>(i, 1) );
 			++degree;
+			return 1;
 		} else {
 			++neighbors[i];
+			return 0;
 		}
 	}
 };
@@ -87,8 +89,8 @@ struct Graph {
 			int u, i, j;
 			while (f >> u >> i >> j) {
 				n = max(u, n);
-				m = max(i, max(j, m));
-				ucmp.push_back(comparison(u - 1, i - 1, j - 1) );	// now user and item starts from 0
+				m = max(i + 1, max(j + 1, m));
+				ucmp.push_back(comparison(u - 1, i, j) );	// now user and item starts from 0
 			}
 			omega = ucmp.size();
 		} else {
@@ -112,8 +114,12 @@ struct Graph {
 		for (int i = 0; i < omega; ++i) {
 			int j1 = ucmp[i].item1_id + offset;
 			int j2 = ucmp[i].item2_id + offset;
-			nodes[j1].add_neighbor(j2);
-			nodes[j2].add_neighbor(j1);
+			int n1 = nodes[j1].add_neighbor(j2);
+			int n2 = nodes[j2].add_neighbor(j1);
+			if (n1 + n2 == 1) {
+				printf("j1=%d, j2=%d\n", j1, j2);
+				exit(0);
+			}
 		}
 
 		E = 0;		
@@ -140,7 +146,7 @@ struct Graph {
 		f.close();
 		
 		// call gcluster
-		char c_nparts[1];
+		char c_nparts[2];
 		sprintf(c_nparts, "%d", nparts);
 		// system call
 		if (system(NULL) ) {
@@ -161,6 +167,7 @@ struct Graph {
 		strcpy(partition, gfile);
 		strcat(partition, ".part.");
 		strcat(partition, c_nparts);
+		printf("partition file: [%s]\n", partition);
 		ifstream f2(partition);
 		if (f2) {
 			int i = 0;
@@ -176,7 +183,7 @@ struct Graph {
 		f2.close();
 
 		// partition the file
-		vector<vector<comparison> > tmp;
+		vector<vector<comparison> > tmp(nparts);
 		for (int i = 0; i < omega; ++i) {
 			comparison cur = ucmp[i];
 			int j1 = cur.item1_id;
@@ -198,7 +205,7 @@ struct Graph {
 		// 1D indices for alt-SVM
 		pidx.resize(nparts + 1);
 		pidx[0] = 0;
-		for (int i = 0; i <= nparts; ++i) {
+		for (int i = 1; i <= nparts; ++i) {
 			pidx[i] = pidx[i - 1] + tmp[i - 1].size();	
 		}
 
