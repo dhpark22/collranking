@@ -16,11 +16,11 @@ using dual coordinate descent with the equation listed in the report
 // learning U, return w vector
 vector<double> trainU(problem* p, parameter* param) {
 	vector<int> order(p->l);
-	vector<double> alpha(p->l, 0);	
+	vector<double> alpha(p->l, 0);
 	vector<double> w(p->n, 0);
 	double one_2C = 0.5 / param->C;
 	double maxiter = 1000;
-	double eps = 1e-10;
+	double eps = param->eps;
 	double oldQ = 0;
 
 	for (int i = 0; i < p->l; ++i) {
@@ -79,9 +79,9 @@ vector<double> trainV(problem* p, parameter* param) {
 	double alpha = 0;
 	double one_2C = 0.5 / param->C;
 	double maxiter = 1000;
-	double eps = 1e-8;
+	double eps = param->eps;
 	double oldQ = 0;  
-	vector<double> w(p->n, 0);
+	vector<double> w(p->n);
 	feature_node* xi = p->x[0];
 
 	for (int iter = 0; iter < maxiter; ++iter) {
@@ -97,6 +97,7 @@ vector<double> trainV(problem* p, parameter* param) {
 
 		double delta = (1 - ywxi - alpha * one_2C) / (xi_snorm * 2 + one_2C);		// xi_snorm * 2, this is the only difference
 		delta = max(0., delta + alpha) - alpha;
+		alpha += delta;
 
 		for (int j = 0; j < p->n; ++j) {
 			w[xi[j].index - 1] += delta * p->y[0] * xi[j].value;
@@ -113,7 +114,6 @@ vector<double> trainV(problem* p, parameter* param) {
 			break;
 		}
 		oldQ = Q;
-		
 	}
 	return w;
 }

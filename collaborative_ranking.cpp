@@ -29,23 +29,27 @@
 using namespace std;
 
 class Problem {
-	bool is_allocated, is_clustered;
-	int n_users, n_items, n_train_comps, n_test_comps; 	// number of users/items in training sample, number of samples in traing and testing data set
-	int rank, lambda, nparts;				// parameters
-	double *U, *V;						// low rank U, V
-	double alpha, beta;					// parameter for sgd
-	Graph g;						// Graph used for clustering training data
-	vector<comparison> comparisons_test;			// vector stores testing comparison data
+    bool is_allocated, is_clustered;
+    int n_users, n_items, n_train_comps, n_test_comps; 	// number of users/items in training sample, number of samples in traing and testing data set
+    int rank, lambda, nparts;				// parameters
+    double *U, *V;						// low rank U, V
+    double alpha, beta;					// parameter for sgd
+    Graph g;						// Graph used for clustering training data
+    vector<int> n_comps_by_user, n_comps_by_item;
+    vector<comparison> comparisons_test;			// vector stores testing comparison data
 
-	void de_allocate();					// deallocate U, V when they are used multiple times by different methods
-	public:
-		Problem(int, int);				// default constructor
-		~Problem();					// default destructor
-	void read_data(char* train_file, char* test_file);	// read function
-	void alt_rankSVM();
-	// two different sgd function
-	double compute_ndcg();
-	double compute_testerror();
+    bool sgd_step(const int& idx, double step_size);
+    void de_allocate();					// deallocate U, V when they are used multiple times by different methods
+  
+  public:
+    Problem(int, int);				// default constructor
+    ~Problem();					// default destructor
+    void read_data(char* train_file, char* test_file);	// read function
+    void alt_rankSVM();
+    void run_sgd_random();
+    void run_sgd_nomad();
+    double compute_ndcg();
+    double compute_testerror();
 };
 
 // may be more parameters can be specified here
@@ -67,13 +71,24 @@ void Problem::read_data (char* train_file, char* test_file) {
 	this->n_items = this->g.m;
 	this->n_train_comps = this->g.omega;
 
+	n_comps_by_user.clear(); n_comps_by_user.resize(this->n_users);
+	n_comps_by_item.clear(); n_comps_by_item.resize(this->n_items);
+	for(int i=0; i<this->n_users; i++) n_comps_by_user[i] = 0;
+	for(int i=0; i<this->n_items; i++) n_comps_by_item[i] = 0;
+
+	for(int i=0; i<this->n_train_comps; i++) {
+		++n_comps_by_user[g.ucmp[i].user_id];
+		++n_comps_by_item[g.ucmp[i].item1_id];
+		++n_comps_by_item[g.ucmp[i].item2_id];
+	}		
+
 	ifstream f(test_file);
 	if (f) {
 		int u, i, j;
 		while (f >> u >> i >> j) {
 			this->n_users = max(u, this->n_users);
-			this->n_items = max(i + 1, max(j + 1, this->n_items));
-			this->comparisons_test.push_back(comparison(u - 1, i, j) );
+			this->n_items = max(i, max(j, this->n_items));
+			this->comparisons_test.push_back(comparison(u - 1, i - 1, j - 1) );
 		}
 		this->n_test_comps = this->comparisons_test.size();
 	} else {
@@ -81,21 +96,17 @@ void Problem::read_data (char* train_file, char* test_file) {
 		exit(EXIT_FAILURE);
 	}
 	f.close();
+
 	this->U = new double [this->n_users * this->rank];
 	this->V = new double [this->n_items * this->rank];
-}
 
-void Problem::alt_rankSVM () {
 	if (!is_clustered) {
 		this->g.cluster();		// call graph clustering prior to the computation
 		is_clustered = true;
 	}
+}
 
-	//if (this->is_allocated) {
-	//	this->de_allocate();
-	//}
-	//this->is_allocated = true;
-
+void Problem::alt_rankSVM () {
 	srand(time(NULL));
 	for (int i = 0; i < this->n_users * this->rank; ++i) {
 		this->U[i] = ((double) rand() / RAND_MAX);
@@ -126,13 +137,10 @@ void Problem::alt_rankSVM () {
 		B[i][this->rank * 2].index = -1;
 	}
 
-	for (int iter = 0; iter < 50; ++iter) {
+	for (int iter = 0; iter < 20; ++iter) {
 		// Learning U
 		#pragma omp parallel for
 		for (int i = 0; i < this->n_users; ++i) {
-			// int start = this->g.uidx[i];
-			// int end = this->g.uidx[i + 1];
-			// random_shuffle(this->g.ucmp.begin() + start, this->g.ucmp.begin() + end);
 			for (int j = this->g.uidx[i]; j < this->g.uidx[i + 1]; ++j) {
 				double *V1 = &V[this->g.ucmp[j].item1_id * this->rank];
 				double *V2 = &V[this->g.ucmp[j].item2_id * this->rank];
@@ -156,15 +164,15 @@ void Problem::alt_rankSVM () {
 			struct parameter param;
 			param.solver_type = L2R_L2LOSS_SVC_DUAL;
 			param.C = 1.;
+			param.eps = 1e-8;
 			//struct model *M;
 			if (!check_parameter(&P, &param) ) {
 				// run SVM
-				vector<double> w = trainU(&P, &param);
 				//M = train(&P, &param);
+				vector<double> w = trainU(&P, &param);
 				// store the result
 				for (int j = 0; j < rank; ++j) {
-					#pragma omp critical 
-                    this->U[i * rank + j] = w[j];
+					this->U[i * rank + j] = w[j];
 				}
 				//free_and_destroy_model(&M);
 			}
@@ -175,9 +183,6 @@ void Problem::alt_rankSVM () {
 		#pragma omp parallel for
 		for (int i = 0; i < this->nparts; ++i) {
 			// solve the SVM problem sequentially for each sample in the partition
-			//int start = this->g.pidx[i];
-			//int end = this->g.pidx[i + 1];
-			//random_shuffle(this->g.pcmp.begin() + start, this->g.pcmp.begin() + end);
 			for (int j = this->g.pidx[i]; j < this->g.pidx[i + 1]; ++j) {
 				// generate the training set for V using U
 				for (int s = 0; s < this->rank; ++s) {
@@ -197,7 +202,7 @@ void Problem::alt_rankSVM () {
 				struct parameter param;
 				param.solver_type = L2R_L2LOSS_SVC_DUAL;
 				param.C = 1.;
-
+				param.eps = 1e-8;
 				//struct model *M;
 				if (!check_parameter(&P, &param) ) {
 					// run SVM
@@ -208,10 +213,8 @@ void Problem::alt_rankSVM () {
 					for (int s = 0; s < rank; ++s) {
 						int v1 = this->g.pcmp[j].item1_id;
 						int v2 = this->g.pcmp[j].item2_id;
-                        #pragma omp critical 
 						this->V[this->g.pcmp[j].item1_id * this->rank + s] = w[s];			// other threads might be doing the same thing
-						#pragma omp critical
-                        this->V[this->g.pcmp[j].item2_id * this->rank + s] = w[s + this->rank];		// so add lock to the two steps is another option.
+						this->V[this->g.pcmp[j].item2_id * this->rank + s] = w[s + this->rank];		// so add lock to the two steps is another option.
 					}
 					//free_and_destroy_model(&M);
 				}
@@ -226,8 +229,80 @@ void Problem::alt_rankSVM () {
 	}
 	delete [] A;
 	delete [] B;
-
 }	
+
+bool Problem::sgd_step(const int& idx, const double step_size) {
+	double *user_vec  = &U[g.ucmp[idx].user_id * rank];
+	double *item1_vec = &V[g.ucmp[idx].item1_id * rank];
+	double *item2_vec = &V[g.ucmp[idx].item2_id * rank];
+
+    int n_comps_user  = n_comps_by_user[g.ucmp[idx].user_id];
+    int n_comps_item1 = n_comps_by_item[g.ucmp[idx].item1_id];
+    int n_comps_item2 = n_comps_by_item[g.ucmp[idx].item2_id];
+
+	double err = 1.;
+	for(int k=0; k<rank; k++) err -= user_vec[k] * (item1_vec[k] - item2_vec[k]);
+
+	if (err > 0) {	
+		double grad = -2 * err;		// gradient direction for l2 hinge loss
+
+		for(int k=0; k<rank; k++) {
+			double user_dir  = (grad * (item1_vec[k] - item2_vec[k]) + lambda / n_comps_user * user_vec[k]);
+			double item1_dir = (grad * user_vec[k] + lambda / n_comps_item1 * item1_vec[k]);
+			double item2_dir = (-grad * user_vec[k] + lambda / n_comps_item2 * item2_vec[k]);
+
+			user_vec[k]  -= step_size * user_dir;
+			item1_vec[k] -= step_size * item1_dir;
+			item2_vec[k] -= step_size * item2_dir;
+		}
+
+		return true;
+	}
+
+	return false;
+}
+
+void Problem::run_sgd_random() {
+
+	// Clustering
+	/* Cluster the triples based on comparisons_train */
+
+	srand(time(NULL));
+	for(int i=0; i<n_users*rank; i++) U[i] = ((double)rand()/(RAND_MAX));
+	for(int i=0; i<n_items*rank; i++) V[i] = ((double)rand()/(RAND_MAX));
+
+    int n_iter = 10;
+	for(int iter=1; iter<n_iter; iter++) {
+		int idx = (int)((double)rand() * (double)n_train_comps / (double)RAND_MAX);
+
+		sgd_step(idx, alpha / (1. + beta/(double)iter));
+
+		double ndcg = compute_ndcg();
+		double test_err = compute_testerror();
+	}
+
+}
+
+void Problem::run_sgd_nomad() {
+
+	// Clustering
+	/* Cluster the triples based on comparisons_train */
+
+	srand(time(NULL));
+	for(int i=0; i<n_users*rank; i++) U[i] = ((double)rand()/(RAND_MAX));
+	for(int i=0; i<n_items*rank; i++) V[i] = ((double)rand()/(RAND_MAX));
+
+    int n_iter = 10;
+	for(int iter=1; iter<n_iter; iter++) {
+		int idx = (int)((double)rand() * (double)n_train_comps / (double)RAND_MAX);
+
+		sgd_step(idx, alpha / (1. + beta/(double)iter));
+
+		double ndcg = compute_ndcg();
+		double test_err = compute_testerror();
+	}
+
+}
 
 double Problem::compute_ndcg() {
 	double ndcg_sum = 0.;
@@ -267,8 +342,8 @@ int main (int argc, char* argv[]) {
 	}
 
 	int nr_threads = atoi(argv[3]);
-	int nparts = (nr_threads > 1) ? nr_threads : 2;
-	Problem p(10, nparts);		// rank = 10, #partition = 16
+	//int nparts = (nr_threads > 1) ? nr_threads : 2;
+	Problem p(10, nr_threads + 1);		// rank = 10, #partition = 16
 	p.read_data(argv[1], argv[2]);
 	omp_set_dynamic(0);
 	omp_set_num_threads(nr_threads);

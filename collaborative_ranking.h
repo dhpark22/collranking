@@ -89,8 +89,8 @@ struct Graph {
 			int u, i, j;
 			while (f >> u >> i >> j) {
 				n = max(u, n);
-				m = max(i + 1, max(j + 1, m));
-				ucmp.push_back(comparison(u - 1, i, j) );	// now user and item starts from 0
+				m = max(i, max(j, m));
+				ucmp.push_back(comparison(u - 1, i - 1, j - 1) );	// now user and item starts from 0
 			}
 			omega = ucmp.size();
 		} else {
