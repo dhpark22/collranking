@@ -38,7 +38,7 @@ class Problem {
     vector<int> n_comps_by_user, n_comps_by_item;
     vector<comparison> comparisons_test;			// vector stores testing comparison data
 
-    bool sgd_step(const int& idx, double step_size);
+    bool sgd_step(const comparison &comp, double step_size);
     void de_allocate();					// deallocate U, V when they are used multiple times by different methods
   
   public:
@@ -231,14 +231,14 @@ void Problem::alt_rankSVM () {
 	delete [] B;
 }	
 
-bool Problem::sgd_step(const int& idx, const double step_size) {
-	double *user_vec  = &U[g.ucmp[idx].user_id * rank];
-	double *item1_vec = &V[g.ucmp[idx].item1_id * rank];
-	double *item2_vec = &V[g.ucmp[idx].item2_id * rank];
+bool Problem::sgd_step(const comparison& comp, const double step_size) {
+	double *user_vec  = &U[comp.user_id * rank];
+	double *item1_vec = &V[comp.item1_id * rank];
+	double *item2_vec = &V[comp.item2_id * rank];
 
-    int n_comps_user  = n_comps_by_user[g.ucmp[idx].user_id];
-    int n_comps_item1 = n_comps_by_item[g.ucmp[idx].item1_id];
-    int n_comps_item2 = n_comps_by_item[g.ucmp[idx].item2_id];
+    int n_comps_user  = n_comps_by_user[comp.user_id];
+    int n_comps_item1 = n_comps_by_item[comp.item1_id];
+    int n_comps_item2 = n_comps_by_item[comp.item2_id];
 
 	double err = 1.;
 	for(int k=0; k<rank; k++) err -= user_vec[k] * (item1_vec[k] - item2_vec[k]);
@@ -264,29 +264,35 @@ bool Problem::sgd_step(const int& idx, const double step_size) {
 
 void Problem::run_sgd_random() {
 
-	// Clustering
-	/* Cluster the triples based on comparisons_train */
-
 	srand(time(NULL));
 	for(int i=0; i<n_users*rank; i++) U[i] = ((double)rand()/(RAND_MAX));
 	for(int i=0; i<n_items*rank; i++) V[i] = ((double)rand()/(RAND_MAX));
 
-    int n_iter = 10;
+    for(int i=0; i<n_items; i++)
+        if (n_comps_by_item[i] == 0)
+            printf("%d \n", i);
+
+    alpha = 1.;
+    beta  = 1.;
+    int n_iter = 100000;
 	for(int iter=1; iter<n_iter; iter++) {
 		int idx = (int)((double)rand() * (double)n_train_comps / (double)RAND_MAX);
 
-		sgd_step(idx, alpha / (1. + beta/(double)iter));
+		sgd_step(g.ucmp[idx], alpha / (1. + beta/(double)iter));
 
-		double ndcg = compute_ndcg();
-		double test_err = compute_testerror();
+        if (iter%1000 == 0) {
+            printf("%d iteration, %f test error\n", iter, this->compute_testerror());
+        }
 	}
 
 }
 
 void Problem::run_sgd_nomad() {
 
-	// Clustering
-	/* Cluster the triples based on comparisons_train */
+    if (!is_clustered) {
+		this->g.cluster();		// call graph clustering prior to the computation
+		is_clustered = true;
+	}
 
 	srand(time(NULL));
 	for(int i=0; i<n_users*rank; i++) U[i] = ((double)rand()/(RAND_MAX));
@@ -296,7 +302,7 @@ void Problem::run_sgd_nomad() {
 	for(int iter=1; iter<n_iter; iter++) {
 		int idx = (int)((double)rand() * (double)n_train_comps / (double)RAND_MAX);
 
-		sgd_step(idx, alpha / (1. + beta/(double)iter));
+		sgd_step(g.pcmp[idx], alpha / (1. + beta/(double)iter));
 
 		double ndcg = compute_ndcg();
 		double test_err = compute_testerror();
@@ -305,33 +311,33 @@ void Problem::run_sgd_nomad() {
 }
 
 double Problem::compute_ndcg() {
-	double ndcg_sum = 0.;
-	for(int i=0; i<n_users; i++) {
-		double dcg = 0.;
-		double norm = 1.;
-		// compute dcg
-		ndcg_sum += dcg / norm;
-	}
+  double ndcg_sum = 0.;
+  for(int i=0; i<n_users; i++) {
+    double dcg = 0.;
+    double norm = 1.;
+    // compute dcg
+    ndcg_sum += dcg / norm;
+  }
 }
 
 double Problem::compute_testerror() {
-	int n_error = 0;
-	for(int i=0; i<n_test_comps; i++) {
-		double prod = 0.;
-		int user_idx  = comparisons_test[i].user_id * rank;
-		int item1_idx = comparisons_test[i].item1_id * rank;
-		int item2_idx = comparisons_test[i].item2_id * rank;
-		for(int k=0; k<rank; k++) prod += U[user_idx + k] * (V[item1_idx + k] - V[item2_idx + k]);
-		if (prod < 0.) n_error++;
-	}
-	return (double)n_error / (double)n_test_comps;
+  int n_error = 0;
+  for(int i=0; i<n_test_comps; i++) {
+    double prod = 0.;
+    int user_idx  = comparisons_test[i].user_id * rank;
+    int item1_idx = comparisons_test[i].item1_id * rank;
+    int item2_idx = comparisons_test[i].item2_id * rank;
+    for(int k=0; k<rank; k++) prod += U[user_idx + k] * (V[item1_idx + k] - V[item2_idx + k]);
+    if (prod <= 0.) ++n_error;
+  }
+  return (double)n_error / (double)n_test_comps;
 }
 
 void Problem::de_allocate () {
-	delete [] this->U;
-	delete [] this->V;
-	this->U = NULL;
-	this->V = NULL;
+  delete [] this->U;
+  delete [] this->V;
+  this->U = NULL;
+  this->V = NULL;
 }
 
 int main (int argc, char* argv[]) {
@@ -348,8 +354,12 @@ int main (int argc, char* argv[]) {
 	omp_set_dynamic(0);
 	omp_set_num_threads(nr_threads);
 	double start = omp_get_wtime();
-	p.alt_rankSVM();
-	double end = omp_get_wtime() - start;
+
+	//p.alt_rankSVM();
+	
+    p.run_sgd_random();
+
+    double end = omp_get_wtime() - start;
 	printf("%d threads, takes %f seconds\n", nr_threads, end);
 	return 0;
 }
