@@ -9,7 +9,7 @@
 // [3b] solve the problem with stochasitic gradient descent in hogwild style
 // [3c] solve the problem with stochastic gradient descent in nomad style
 //
-// Compile: g++ -std=C++11 -O3 -g -fopenmp collaborative_ranking.cpp
+// Compile: g++ -std=C++11 -O3 -g -fopenmp collaborative_ranking_v2.cpp
 // Run: ./a.out [rating_file] [rating_format] [graph_output] [num_partitions]
 
 #include <random>
@@ -106,13 +106,7 @@ void Problem::read_data (char* train_file, char* test_file) {
 	this->U = new double [this->n_users * this->rank];
 	this->V = new double [this->n_items * this->rank];
 
-    /*
-	if (!is_clustered) {
-		this->g.cluster();		// call graph clustering prior to the computation
-		is_clustered = true;
-	}
-    */
-}
+}	
 
 void Problem::alt_rankSVM () {
 
@@ -120,7 +114,8 @@ void Problem::alt_rankSVM () {
 		this->g.cluster();		// call graph clustering prior to the computation
 		is_clustered = true;
 	}
- 
+
+	double eps = 1e-8;
 	srand(time(NULL));
 	for (int i = 0; i < this->n_users * this->rank; ++i) {
 		this->U[i] = ((double) rand() / RAND_MAX);
@@ -128,6 +123,11 @@ void Problem::alt_rankSVM () {
 	for (int i = 0; i < this->n_items * this->rank; ++i) {
 		this->V[i] = ((double) rand() / RAND_MAX);
 	}
+
+	double *alphaV = new double[this->n_train_comps];
+	double *alphaU = new double[this->n_train_comps];
+	memset(alphaV, 0, sizeof(double) * this->n_train_comps);
+	memset(alphaU, 0, sizeof(double) * this->n_train_comps);
 
 	printf("initial error %f\n", this->compute_testerror() );
 
@@ -145,14 +145,16 @@ void Problem::alt_rankSVM () {
 	B = new struct feature_node*[this->n_train_comps];
 	for (int i = 0; i < this->n_train_comps; ++i) {
 		B[i] = new struct feature_node[this->rank * 2 + 1];
-		for (int j = 0; j < 2 * this->rank; ++j) {
-			B[i][j].index = j + 1;
+		for (int j = 0; j < this->rank; ++j) {
+			B[i][j].index = this->g.pcmp[i].item1_id * rank + j + 1;
+			B[i][j + rank].index = this->g.pcmp[i].item2_id * rank + j + 1;
 		}
 		B[i][this->rank * 2].index = -1;
 	}
 
-	for (int iter = 0; iter < 20; ++iter) {
+	for (int OuterIter = 0; OuterIter < 20; ++OuterIter) {
 		// Learning U
+		double start = omp_get_wtime();
 		#pragma omp parallel for
 		for (int i = 0; i < this->n_users; ++i) {
 			for (int j = this->g.uidx[i]; j < this->g.uidx[i + 1]; ++j) {
@@ -178,63 +180,55 @@ void Problem::alt_rankSVM () {
 			struct parameter param;
 			param.solver_type = L2R_L2LOSS_SVC_DUAL;
 			param.C = 1.;
-			param.eps = 1e-8;
-			//struct model *M;
+			param.eps = eps;
 			if (!check_parameter(&P, &param) ) {
 				// run SVM
-				//M = train(&P, &param);
-				vector<double> w = trainU(&P, &param);
+				//vector<double> w = trainU(&P, &param);
+				trainU2(&P, &param, U, i, &alphaU[this->g.uidx[i] ]);
 				// store the result
-				for (int j = 0; j < rank; ++j) {
-					this->U[i * rank + j] = w[j];
-				}
-				//free_and_destroy_model(&M);
+				//for (int j = 0; j < rank; ++j) {
+				//	this->U[i * rank + j] = w[j];
+				//}
 			}
 			delete [] y;
 		}
-
+		double Utime = omp_get_wtime() - start;
 		// Learning V 
-		#pragma omp parallel for
-		for (int i = 0; i < this->nparts; ++i) {
-			// solve the SVM problem sequentially for each sample in the partition
-			for (int j = this->g.pidx[i]; j < this->g.pidx[i + 1]; ++j) {
-				// generate the training set for V using U
-				for (int s = 0; s < this->rank; ++s) {
-					B[j][s].value = U[this->g.pcmp[j].user_id * this->rank + s];		// U_i
-					B[j][s + rank].value = -U[this->g.pcmp[j].user_id * this->rank + s];	// -U_i
-				}		
-			
-				// call LIBLINEAR with U[i*rank], B[j]
-				struct problem P;
-				P.l = 1;
-				P.n = rank * 2;
-				double y = 1.;
-				P.y = &y;
-				P.x = &B[j];
-				P.bias = -1;
+		double oldQ = 0;
+		for (int InnerIter = 0; InnerIter < 1; ++InnerIter) {
+			#pragma omp parallel for
+			for (int i = 0; i < this->nparts; ++i) {
+				// solve the SVM problem sequentially for each sample in the partition
+				for (int j = this->g.pidx[i]; j < this->g.pidx[i + 1]; ++j) {
+					// generate the training set for V using U
+					for (int s = 0; s < this->rank; ++s) {
+						B[j][s].value = U[this->g.pcmp[j].user_id * this->rank + s];		// U_i
+						B[j][s + rank].value = -U[this->g.pcmp[j].user_id * this->rank + s];	// -U_i
+					}		
+				
+					// call LIBLINEAR with U[i*rank], B[j]
+					struct problem P;
+					P.l = 1;
+					P.n = rank * 2;
+					double y = 1.;
+					P.y = &y;
+					P.x = &B[j];
+					P.bias = -1;
 
-				struct parameter param;
-				param.solver_type = L2R_L2LOSS_SVC_DUAL;
-				param.C = 1.;
-				param.eps = 1e-8;
-				//struct model *M;
-				if (!check_parameter(&P, &param) ) {
-					// run SVM
-					//M = train(&P, &param);
-					vector<double> w = trainV(&P, &param);
-
-					// store the result
-					for (int s = 0; s < rank; ++s) {
-						int v1 = this->g.pcmp[j].item1_id;
-						int v2 = this->g.pcmp[j].item2_id;
-						this->V[this->g.pcmp[j].item1_id * this->rank + s] = w[s];			// other threads might be doing the same thing
-						this->V[this->g.pcmp[j].item2_id * this->rank + s] = w[s + this->rank];		// so add lock to the two steps is another option.
+					struct parameter param;
+					param.solver_type = L2R_L2LOSS_SVC_DUAL;
+					param.C = 1.;
+					param.eps = eps;
+					if (!check_parameter(&P, &param) ) {
+						// run SVM
+						trainV2(&P, &param, V, this->g.pcmp[j], alphaV[j]);
 					}
-					//free_and_destroy_model(&M);
 				}
 			}
+			
 		}
-		printf("iteratrion %d, test error %f\n", iter, this->compute_testerror() );
+		double Vtime = omp_get_wtime() - Utime - start;
+		printf("iteratrion %d, test error %f, learning U takes %f seconds, learning V takes %f seconds\n", OuterIter, this->compute_testerror(), Utime, Vtime);
 	}
 
 	for (int i = 0; i < this->n_train_comps; ++i) {
@@ -243,6 +237,8 @@ void Problem::alt_rankSVM () {
 	}
 	delete [] A;
 	delete [] B;
+	delete [] alphaV;
+	delete [] alphaU;
 }	
 
 bool Problem::sgd_step(const comparison& comp, const double l, const double step_size) {
@@ -367,38 +363,38 @@ void Problem::run_sgd_nomad() {
 }
 
 double Problem::compute_ndcg() {
-  double ndcg_sum = 0.;
-  for(int i=0; i<n_users; i++) {
-    double dcg = 0.;
-    double norm = 1.;
-    // compute dcg
-    ndcg_sum += dcg / norm;
-  }
+	double ndcg_sum = 0.;
+	for(int i=0; i<n_users; i++) {
+		double dcg = 0.;
+		double norm = 1.;
+		// compute dcg
+		ndcg_sum += dcg / norm;
+	}
 }
 
 double Problem::compute_testerror() {
-  int n_error = 0;
+	int n_error = 0; 
 
-  #pragma omp parallel for reduction(+:n_error)
-  for(int i=0; i<n_test_comps; i++) {
-    double prod = 0.;
-    int user_idx  = comparisons_test[i].user_id * rank;
-    int item1_idx = comparisons_test[i].item1_id * rank;
-    int item2_idx = comparisons_test[i].item2_id * rank;
-    for(int k=0; k<rank; k++) prod += U[user_idx + k] * (V[item1_idx + k] - V[item2_idx + k]);
-    if (prod <= 0.) n_error += 1;
-    if (prod != prod) {
-      printf("NaN detected \n");
-    }
-  }
+	#pragma omp parallel for reduction(+:n_error)
+	for(int i=0; i<n_test_comps; i++) {
+		double prod = 0.;
+		int user_idx  = comparisons_test[i].user_id * rank;
+		int item1_idx = comparisons_test[i].item1_id * rank;
+		int item2_idx = comparisons_test[i].item2_id * rank;
+		for(int k=0; k<rank; k++) prod += U[user_idx + k] * (V[item1_idx + k] - V[item2_idx + k]);
+		if (prod <= 0.) n_error += 1;
+		if (prod != prod) {
+			printf("NaN detected \n");
+		}
+	}
   return (double)n_error / (double)n_test_comps;
 }
 
 void Problem::de_allocate () {
-  delete [] this->U;
-  delete [] this->V;
-  this->U = NULL;
-  this->V = NULL;
+	delete [] this->U;
+	delete [] this->V;
+	this->U = NULL;
+	this->V = NULL;
 }
 
 int main (int argc, char* argv[]) {
@@ -411,17 +407,15 @@ int main (int argc, char* argv[]) {
 	int nr_threads = atoi(argv[3]);
 	//int nparts = (nr_threads > 1) ? nr_threads : 2;
 	Problem p(10, nr_threads + 1);		// rank = 10, #partition = 16
-    p.read_data(argv[1], argv[2]);
+	p.read_data(argv[1], argv[2]);
 	omp_set_dynamic(0);
 	omp_set_num_threads(nr_threads);
 	double start = omp_get_wtime();
-
-	//p.alt_rankSVM();
-	
-    p.run_sgd_random();
-
-    double end = omp_get_wtime() - start;
-	printf("%d threads, %f error, takes %f seconds\n", nr_threads, p.compute_testerror(), end);
-	
-    return 0;
+	p.alt_rankSVM();
+	double m1 = omp_get_wtime() - start;
+	printf("%d threads, rankSVM takes %f seconds\n", nr_threads, m1);
+	p. run_sgd_random();
+	double m2 = omp_get_wtime() - start - m1;
+	printf("%d threads, randSGD takes %f seconds\n", nr_threads, m2);
+	return 0;
 }
