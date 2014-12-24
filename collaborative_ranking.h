@@ -75,8 +75,8 @@ struct Graph {
 	vector<comparison> pcmp;		// pointer to array of comparisons sorted by partitions
 	vector<int> uidx;			// start/end indices of comparison data for each user
 	vector<int> pidx;			// start/end indices of comparison data for each partition
-	vector<vector<int> > p2idx;		// start/end indices of comparison data for each user in each partition
-	map<int, int> buckets;
+        vector<vector<int> > p2idx;		// start/end indices of comparison data for each user in each partition
+        map<int, int> buckets;
 
 	Graph(): nparts(0) {}
 	Graph(int np): nparts(np) {}
@@ -104,6 +104,7 @@ struct Graph {
 			int u = ucmp[i].user_id;
 			++uidx[u + 1];
 		}
+	
 		for (int i = 1; i <= n; ++i) {
 			uidx[i] += uidx[i - 1];
 		}
@@ -130,9 +131,19 @@ struct Graph {
 	}
 
 	void cluster() {
+        if (nparts == 1) {
+     		this->pcmp = this->ucmp;
+	    	this->pidx.resize(2);
+		    this->pidx[0] = 0;
+		    this->pidx[1] = omega;
+            this->p2idx.resize(1);
+            this->p2idx[0] = this->uidx;
+            return;
+        }
+ 
 		// write the adjacent file
 		int offset = 1;
-		char gfile[20];
+		char gfile[50];
 		strcpy(gfile, tf);
 		strcat(gfile,".g");
 		ofstream f(gfile);
@@ -144,7 +155,14 @@ struct Graph {
 			f << endl;
 		}
 		f.close();
-		
+	
+        char *filename;
+        filename = strrchr(gfile,'/');
+        if (filename == nullptr) 
+            filename = gfile;
+        else
+            filename += 1;
+	
 		// call gcluster
 		char c_nparts[2];
 		sprintf(c_nparts, "%d", nparts);
@@ -163,8 +181,8 @@ struct Graph {
 		}
 
 		// read partition
-		char partition[20];
-		strcpy(partition, gfile);
+		char partition[50];
+		strcpy(partition, filename);
 		strcat(partition, ".part.");
 		strcat(partition, c_nparts);
 		printf("partition file: [%s]\n", partition);
@@ -203,6 +221,7 @@ struct Graph {
 		}
 
 		// 1D indices for alt-SVM
+		pidx.clear();
 		pidx.resize(nparts + 1);
 		pidx[0] = 0;
 		for (int i = 1; i <= nparts; ++i) {
@@ -212,23 +231,33 @@ struct Graph {
 		// 2D indices for SGD
 		p2idx.resize(nparts);
 		for (int i = 0; i < nparts; ++i) {
-			p2idx[i].resize(n + 1, 0);
+			p2idx[i].resize(n+1,0);
 			for (int j = 0; j < tmp[i].size(); ++j) {
 				comparison cur = tmp[i][j];
 				int u = cur.user_id;
 				++p2idx[i][u + 1];
 			}
+            p2idx[i][0] = pidx[i];
 			for (int j = 1; j <= n; ++j) {
 				p2idx[i][j] += p2idx[i][j - 1];
 			}
 		}
 
+		pcmp.clear();
 		pcmp.resize(pidx[nparts]);
 		for (int i = 0; i < nparts; ++i) {
 			for (int j = 0; j < tmp[i].size(); ++j) {
 				pcmp[pidx[i] + j] = tmp[i][j];
 			}
 		}
+
+/*
+        for(int i=0; i<nparts; ++i) {
+            for(int j=0; j<=n; ++j) {
+                printf("%d %d %d %d \n", p2idx[i][j], i, j, pcmp[p2idx[i][j]].user_id);
+            }
+        } 
+*/
 
 		for (int i = 0; i < nparts; ++i) {
 			printf("group %d, size %d\n", i, tmp[i].size() );
@@ -238,9 +267,141 @@ struct Graph {
 
 typedef struct Graph Graph;
 
-//bool order_user(comparison a, comparison b) { return ((a.user_id < b.user_id) || ((a.user_id == b.user_id) && (min(a.item1_id, a.item2_id) < min(b.item1_id, b.item2_id)))); }
-//bool order_item(comparison a, comparison b) { return (min(a.item1_id, a.item2_id) < min(b.item1_id, b.item2_id)); }
-//bool order_user(rating a, rating b) { return ((a.user_id < b.user_id) || ((a.user_id == b.user_id) && (a.item_id < b.item_id))); }
-//bool order_item(rating a, rating b) { return ((a.item_id < b.item_id) || ((a.item_id == b.item_id) && (a.user_id < b.user_id))); }
+/*Parallal Collaborative Ranking, collaborative project by Jin Zhang and Dohyung Park
+Input: 
+	**x,	2D arrary of feature_node, index :  used by w, 
+	l,	row number of X, or number of training samples
+	n,	column number, or dimension of each training samples
+	C,	coefficient
+Output:
+	w,	feature vector, with dimension n
+
+using dual coordinate descent with the equation listed in the report
+*/
+
+// helper function in generating random integer between [start, end];
+int myrandom (int i) {
+        mt19937 gen(time(NULL));
+        uniform_int_distribution<int> randidx(0, i + 1);
+	return randidx(gen);
+}
+
+// learning U, with global w and alpha vector
+// w is the U[iusr ... iusr+rank]
+void trainU(problem* p, parameter* param, double* U, int iusr, double* alpha) {
+	vector<int> order(p->l);
+	double one_2C = 0.5 / param->C;
+	double maxiter = 1;
+	double eps = param->eps;
+	double oldQ = 0;
+
+	for (int i = 0; i < p->l; ++i) {
+		order[i] = i;
+	}
+
+	for (int iter = 0; iter < maxiter; ++iter) {
+		// random_shuffle(order.begin(), order.end(), myrandom );
+		for (int i = 0; i < p->l; ++i) {
+			int idx = order[i];
+
+			feature_node* xi = p->x[idx];
+
+			double xi_snorm = 0;
+			for (int j = 0; j < p->n; ++j) {
+				xi_snorm += xi[j].value * xi[j].value;
+			}
+
+			double ywxi = 0;
+			for (int j = 0; j < p->n; ++j) {
+				ywxi += xi[j].value * U[iusr * p->n + j];
+			}
+
+			//if (ywxi != ywxi) {
+			//	printf("break ywxi: %f\n", ywxi);
+			//	exit(0);
+			//}
+
+			double delta = (1 - ywxi - alpha[idx] * one_2C) / (xi_snorm + one_2C);
+
+			delta = max(0., delta + alpha[idx]) - alpha[idx];
+			alpha[idx] += delta;
+			
+			for (int j = 0; j < p->n; ++j) {
+				double dval = delta * xi[j].value;
+				U[idx * p->n + j] += dval;
+			}
+		}
+		
+		double w_snorm = 0;
+		double alpha_snorm = 0;
+		double alpha_sum = 0;
+		double Q = 0;
+		for (int j = 0; j < p->n; ++j) {
+			w_snorm += U[iusr * p->n + j] * U[iusr * p->n + j];
+		}
+		for (int j = 0; j < p->l; ++j) {
+			alpha_snorm += alpha[j] * alpha[j];	
+			alpha_sum += alpha[j];
+		} 
+		Q = w_snorm / 2 + alpha_snorm * one_2C / 2 - alpha_sum;
+		if (fabs(Q - oldQ) < eps) {
+			break;
+		}
+		oldQ = Q;
+	}
+}
+
+// learning V with global w and alpha vector 
+// w is V[iid1 .. iid1+rank], -V[iid2 .. iid2+rank]
+void trainV(problem* p, parameter* param, double* V, comparison& c, double* alpha ) {
+	double one_2C = 0.5 / param->C;
+	double maxiter = 1;
+	double eps = param->eps;
+	double oldQ = 0;  
+	feature_node* xi = p->x[0];
+
+	int uid = c.user_id;
+	int iid1 = c.item1_id;
+	int iid2 = c.item2_id;
+	int rank = p->n / 2;
+
+	for (int iter = 0; iter < maxiter; ++iter) {
+		double xi_snorm = 0;
+		for (int j = 0; j < rank; ++j) {
+			xi_snorm += xi[j].value * xi[j].value;
+		}
+		xi_snorm *= 2;
+
+		double ywxi = 0;
+		for (int j = 0; j < rank; ++j) {
+			ywxi += xi[j].value * V[iid1 * rank + j];
+			ywxi += xi[j + rank].value * V[iid2 * rank + j];
+		}
+
+		double delta = (1 - ywxi - alpha[0] * one_2C) / (xi_snorm * 2 + one_2C);		// xi_snorm * 2, this is the only difference
+		
+		delta = max(0., delta + alpha[0]) - alpha[0];
+		alpha[0] += delta;
+		for (int j = 0; j < rank; ++j) {
+			double dval = delta * xi[j].value;
+			//#pragma omp atomic
+			V[iid1 * rank + j] += dval;
+			//#pragma omp atomic
+			V[iid2 * rank + j] -= dval;
+		}
+
+		double Q = 0;
+		double w_snorm = 0;
+		for (int j = 0; j < rank; ++j) {
+			w_snorm += V[iid1 * rank + j] * V[iid1 * rank + j];
+			w_snorm += V[iid2 * rank + j] * V[iid2 * rank + j];
+		}
+		Q = w_snorm / 2 - alpha[0] * alpha[0] * one_2C / 2 - alpha[0];
+		if (fabs(Q - oldQ) < eps) {
+			break;
+		}
+		oldQ = Q;
+	}
+}
 
 #endif

@@ -2,7 +2,7 @@ CC=g++
 CFLAG=-std=c++11 -O3 -g -rdynamic -fopenmp
 metis=/work/01802/mooncake/opt/metis
 parmetis=/work/01802/mooncake/opt/parmetis
-liblinear=$(WORK)/opt/liblinear-1.96
+liblinear=$(WORK)/opt/liblinear-1.94
 #objects = $(addprefix $(liblinear)/, linear.o tron.o)
 #objects = $(addprefix $(liblinear)/blas/, *.o)
 
