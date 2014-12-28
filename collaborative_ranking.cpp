@@ -122,6 +122,11 @@ void Problem::alt_rankSVM () {
 		this->V[i] = ((double) rand() / RAND_MAX);
 	}
 
+  lambda = 1.;
+
+  int n_threads = g.nparts;
+  int n_max_updates = n_train_comps/n_threads;
+
 	double *alphaV = new double[this->n_train_comps];
 	double *alphaU = new double[this->n_train_comps];
 	memset(alphaV, 0, sizeof(double) * this->n_train_comps);
@@ -155,7 +160,8 @@ void Problem::alt_rankSVM () {
 	for (int OuterIter = 0; OuterIter < 20; ++OuterIter) {
 		// Learning U
 		double start = omp_get_wtime();
-		#pragma omp parallel for
+
+    #pragma omp parallel for
 		for (int i = 0; i < this->n_users; ++i) {
 			for (int j = this->g.uidx[i]; j < this->g.uidx[i + 1]; ++j) {
 				double *V1 = &V[this->g.ucmp[j].item1_id * this->rank];
@@ -181,6 +187,46 @@ void Problem::alt_rankSVM () {
 				trainU(&P, &param, U, i, &alphaU[this->g.uidx[i] ]);
 			}
 		}
+
+/*
+    #pragma omp parallel
+    {
+
+      int i_thread = omp_get_thread_num();
+      int uid_from = (n_users * i_thread / n_threads);
+      int uid_to   = (n_users * (i_thread+1) / n_threads);
+
+      std::mt19937 gen(n_threads*OuterIter + i_thread);
+      std::uniform_int_distribution<int> randidx(g.uidx[uid_from], g.uidx[uid_to]-1);
+
+      printf("%d: %d-%d \n", i_thread, g.uidx[uid_from], g.uidx[uid_to]);
+
+//      for(int n_updates=0; n_updates<n_max_updates; ++n_updates) {
+//        int idx = randidx(gen);
+      for(int idx=g.uidx[uid_from]; idx<g.uidx[uid_to]; ++idx) {
+        double *user_vec  = &U[g.ucmp[idx].user_id  * rank];
+        double *item1_vec = &V[g.ucmp[idx].item1_id * rank];
+        double *item2_vec = &V[g.ucmp[idx].item2_id * rank];
+    
+        double p1 = 0., p2 = 0., d = 0.;
+        for(int j=0; j<rank; ++j) {
+          d = item1_vec[j] - item2_vec[j];
+          p1 += user_vec[j] * d;
+          p2 += d*d;
+        } 
+
+        double delta = (1. - p1 - alphaU[idx]*.5*lambda) / (p2 + .5*lambda);
+        delta = max(0., delta + alphaU[idx]) - alphaU[idx];      
+ 
+        alphaU[idx] += delta;
+        for(int j=0; j<rank; ++j) user_vec[j] += delta * (item1_vec[j] - item2_vec[j]); 
+      }
+
+		}
+*/
+
+
+
 		double Utime = omp_get_wtime() - start;
 		printf("iteratrion %d, test error %f \n", OuterIter, this->compute_testerror());
 	
@@ -188,9 +234,9 @@ void Problem::alt_rankSVM () {
 		#pragma omp parallel for
 		for (int i = 0; i < this->nparts; ++i) {
 			// solve the SVM problem sequentially for each sample in the partition
-			for (int j = this->g.pidx[i]; j < this->g.pidx[i + 1]; ++j) {
+      for (int j = this->g.pidx[i]; j < this->g.pidx[i + 1]; ++j) {
 				// generate the training set for V using U
-				for (int s = 0; s < this->rank; ++s) {
+/*				for (int s = 0; s < this->rank; ++s) {
 					B[j][s].value = U[this->g.pcmp[j].user_id * this->rank + s];		// U_i
 					B[j][s + rank].value = -U[this->g.pcmp[j].user_id * this->rank + s];	// -U_i
 				}		
@@ -210,6 +256,29 @@ void Problem::alt_rankSVM () {
 					// run SVM
 					trainV(&P, &param, V, this->g.pcmp[j], &alphaV[j]);
 				}
+*/
+        double* user_vec = &U[this->g.pcmp[j].user_id * this->rank];
+        double* item1_vec = &V[this->g.pcmp[j].item1_id * this->rank];
+        double* item2_vec = &V[this->g.pcmp[j].item2_id * this->rank];
+
+        double p1 = 0., p2 = 0., d = 0.;
+
+        for(int s=0; s<this->rank; ++s) {
+          d = item1_vec[s] - item2_vec[s];
+          p1 += user_vec[s] * d;
+          p2 += user_vec[s] * user_vec[s];
+        }
+        
+        double delta = (1. - p1 - alphaV[j]*.5) / (p2*2. + .5);
+
+        delta = max(0., delta + alphaV[j]) - alphaV[j];
+        
+        alphaV[j] += delta;
+        for(int s=0; s<this->rank; ++s) {
+          item1_vec[s] += delta * user_vec[s];
+          item2_vec[s] -= delta * user_vec[s];
+        }
+
 			}
 		}
 		double Vtime = omp_get_wtime() - Utime - start;
@@ -458,7 +527,7 @@ double Problem::compute_ndcg() {
 double Problem::compute_testerror() {
 	int n_error = 0; 
    
-    /* 
+  /*   
     for(int i=0; i<100; i++) {
         int idx = (int)((double)n_test_comps * (double)rand() / (double)RAND_MAX);
 		double prod = 0.;
@@ -469,7 +538,26 @@ double Problem::compute_testerror() {
 	    printf("%f ", i, prod);
     }
     printf("\n");
-    */
+  */
+
+  for(int i=0; i<n_users; i++)
+  {
+    double p = 0.;
+    for(int j=0; j<rank; j++) p += U[i*rank+j]*U[i*rank+j];
+    for(int j=0; j<rank; j++) U[i*rank+j] /= sqrt(p);
+  }
+
+  for(int i=0; i<10; i++)
+  {
+    for(int j=0; j<rank; j++) printf("%5.2f ", U[i*rank+j]);
+    printf("\n");
+  }
+  for(int i=0; i<10; i++)
+  {
+    for(int j=0; j<rank; j++) printf("%5.2f ", V[i*rank+j]);
+    printf("\n");
+  }
+
 
     for(int i=0; i<n_users*rank; i++)
         if ((U[i] > 1e5) || (U[i] < -1e5)) {
@@ -516,16 +604,17 @@ int main (int argc, char* argv[]) {
 	double start = omp_get_wtime();
     
 	//p.alt_rankSVM();
-	//double m1 = omp_get_wtime() - start;
+	double m1 = omp_get_wtime() - start;
 	//printf("%d threads, rankSVM takes %f seconds\n", nr_threads, m1);
 	
-    p.run_sgd_random();
+  p.run_sgd_random();
 	double m2 = omp_get_wtime() - start - m1;
-    printf("%d threads, randSGD takes %f seconds\n", nr_threads, m2);
+  printf("%d threads, randSGD takes %f seconds\n", nr_threads, m2);
 
+/*
     p.run_sgd_nomad();
     double m3 = omp_get_wtime() - start - m2 - m1;
     printf("%d threads, nomadSGD takes %f seconds, error %f \n", nr_threads, m3, p.compute_testerror());
- 
+*/
     return 0;
 }
