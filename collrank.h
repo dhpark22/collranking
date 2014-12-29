@@ -49,7 +49,7 @@ struct comparison
   }
 };
 
-bool comp_itemwise(comparison a, comparison b) { return ((a.item1_id < b.item1_id) || ((a.item1_id == b.item2_id) && (a.item2_id < b.item2_id))); }
+bool comp_itemwise(comparison a, comparison b) { return ((a.item1_id < b.item1_id) || ((a.item1_id == b.item1_id) && (a.user_id < b.user_id))); }
 
 struct Node {
 	int degree;
