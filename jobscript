@@ -5,25 +5,10 @@
 #SBATCH -p serial
 #SBATCH -N 1
 #SBATCH -n 16
-#SBATCH -t 03:00:00
+#SBATCH -t 06:00:00
 #SBATCH --mail-user=dhpark@utexas.edu
 #SBATCH --mail-type=begin
 #SBATCH --mail-type=end
-
-./error.out $SCRATCH/collrank_data/ml10m_train500.txt $SCRATCH/collrank_data/ml10m_test500.txt 1
-./speed.out $SCRATCH/collrank_data/ml10m_train500.txt $SCRATCH/collrank_data/ml10m_test500.txt 1
-
-./error.out $SCRATCH/collrank_data/ml10m_train500.txt $SCRATCH/collrank_data/ml10m_test500.txt 4 
-./speed.out $SCRATCH/collrank_data/ml10m_train500.txt $SCRATCH/collrank_data/ml10m_test500.txt 4
-
-./error.out $SCRATCH/collrank_data/ml10m_train500.txt $SCRATCH/collrank_data/ml10m_test500.txt 8
-./speed.out $SCRATCH/collrank_data/ml10m_train500.txt $SCRATCH/collrank_data/ml10m_test500.txt 8
-
-./error.out $SCRATCH/collrank_data/ml10m_train500.txt $SCRATCH/collrank_data/ml10m_test500.txt 16
-./speed.out $SCRATCH/collrank_data/ml10m_train500.txt $SCRATCH/collrank_data/ml10m_test500.txt 16
-
-./error.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 1
-./speed.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 1
 
 ./error.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 4
 ./speed.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 4
