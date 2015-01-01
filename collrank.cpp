@@ -161,9 +161,11 @@ void Problem::read_data(char* train_file, char* test_file) {
 
 void Problem::alt_rankSVM (double l) {
 
+  printf("Alternating rankSVM with %d threads.. \n", n_threads);
+
   lambda = l;
 
-  int n_max_updates = n_train_comps/20/n_threads;
+  int n_max_updates = n_train_comps/1000/n_threads;
 
   double *alphaV = new double[this->n_train_comps];
   double *alphaU = new double[this->n_train_comps];
@@ -173,7 +175,7 @@ void Problem::alt_rankSVM (double l) {
   // Alternating RankSVM
   for(int i=0; i<n_users*rank; ++i) U[i] = 1.;
   memset(V, 0, sizeof(double) * n_items * rank);
-  printf("Initial test error : %f \n", this->compute_testerror());
+  //printf("Initial test error : %f \n", this->compute_testerror());
 
   double start = omp_get_wtime(), error;
   for (int OuterIter = 0; OuterIter < 10; ++OuterIter) {
@@ -243,7 +245,7 @@ void Problem::alt_rankSVM (double l) {
 		}
 
     error = this->compute_testerror();
-	  printf("iteration %d, test error %f, time %f \n", OuterIter, error, omp_get_wtime() - start);
+	  printf("%d, %f, %f \n", OuterIter, error, omp_get_wtime() - start);
 	
     // Learning U
     memset(U, 0, sizeof(double) * n_users * rank);
@@ -303,9 +305,9 @@ void Problem::alt_rankSVM (double l) {
 		}
 
     error = this->compute_testerror();
- 	  printf("iteration %d, test error %f, time %f \n", OuterIter, error, omp_get_wtime() - start);
+ 	  printf("%d, %f, %f \n", OuterIter, error, omp_get_wtime() - start);
 
-    if (OuterIter < 5) n_max_updates *= 3;	
+    if (OuterIter < 5) n_max_updates *= 4;	
   }
 
 	delete [] alphaV;
@@ -350,6 +352,8 @@ bool Problem::sgd_step(const comparison& comp, const bool first_item_only, const
 
 void Problem::run_sgd_random(double l, double a, double b) {
 
+  printf("Random SGD with $d threads..\n", n_threads);
+  
   auto real_rand = std::bind(std::uniform_real_distribution<double>(0,1), std::mt19937(time(NULL)));
   for(int i=0; i<n_users*rank; i++) U[i] = real_rand();
   for(int i=0; i<n_items*rank; i++) V[i] = real_rand();
@@ -358,9 +362,7 @@ void Problem::run_sgd_random(double l, double a, double b) {
   alpha  = a;
   beta   = b;
 
-  int n_max_updates = n_train_comps/20/n_threads;
-
-  printf("Initial test error : %f \n", this->compute_testerror());
+  int n_max_updates = n_train_comps/1000/n_threads;
 
   std::vector<int> c(n_train_comps,0);
 
@@ -404,12 +406,16 @@ void Problem::run_sgd_random(double l, double a, double b) {
 */
     double error = this->compute_testerror();
     if (error < 0.) break; 
-    printf("%d: iter %d, error %f, time %f \n", n_threads, (icycle+1)*n_max_updates, error, omp_get_wtime() - time);
+    printf("%d, %f, %f \n", n_threads, (icycle+1)*n_max_updates, error, omp_get_wtime() - time);
+  
+    if (icycle < 5) n_max_updates *= 4;
   } 
 
 }
 
 void Problem::run_sgd_nomad(double l, double a, double b) {
+
+  printf("NOMAD SGD with $d threads..\n", n_threads);
 
   auto real_rand = std::bind(std::uniform_real_distribution<double>(0,1), std::mt19937(time(NULL)));
   for(int i=0; i<n_users*rank; i++) U[i] = real_rand();
@@ -419,10 +425,8 @@ void Problem::run_sgd_nomad(double l, double a, double b) {
   alpha  = a;
   beta   = b;
 
-  int n_max_updates = n_train_comps/5/n_threads;
+  int n_max_updates = n_train_comps/1000/n_threads;
   int queue_size = n_items+1;
-
-  printf("Initial test error : %f \n", this->compute_testerror());
 
   int **queue = new int*[n_threads];
   std::vector<int> front(n_threads), back(n_threads);
@@ -493,7 +497,10 @@ void Problem::run_sgd_nomad(double l, double a, double b) {
 
     double error = this->compute_testerror();
     if (error < 0.) break; 
-    printf("%d: iter %d, error %f, time %f \n", n_threads, n_updates_total, error, omp_get_wtime() - time);
+    printf("%d, %f, %f \n", n_threads, n_updates_total, error, omp_get_wtime() - time);
+
+    if (icycle < 5) n_max_updates *= 4;
+
   }
 
   for(int i=0; i<n_threads; i++) delete[] queue[i];
