@@ -17,7 +17,7 @@ int n_train = 100, n_test = 100;
 inline int randidx(int from, int to) { return (int)((double)rand() / (double)(RAND_MAX) * (double)(to-from)) + from; }
 
 bool makeComparisons(vector<rating> &ratings, 
-					 ofstream &train_file, ofstream &test_file,
+					 ofstream &output_file, ofstream &train_file, ofstream &test_file,
 					 int new_user_id, int n_train, int n_test) {
 
 	int n_ratings_current_user = ratings.size();
@@ -32,16 +32,21 @@ bool makeComparisons(vector<rating> &ratings,
 						
 				if (ratings[j1].score > ratings[j2].score)
 					// comp.setvalues(0, ratings[j1].item_id, ratings[j2].item_id);
-					comp_list.push_back(comparison(0, ratings[j1].item_id, ratings[j2].item_id));
+					comp_list.push_back(comparison(0, ratings[j1].item_id, ratings[j2].item_id, 1));
 				else if (ratings[j2].score < ratings[j1].score)
 					// comp.setvalues(0, ratings[j2].item_id, ratings[j1].item_id);
-					comp_list.push_back(comparison(0, ratings[j2].item_id, ratings[j1].item_id));
+					comp_list.push_back(comparison(0, ratings[j2].item_id, ratings[j1].item_id, 1));
 
 			}
 		}
 
 		// Subsample comparisons only for the users with enough comparisons
 		if (comp_list.size() >= n_train + n_test) {
+
+      // Write test ratings for this user to output_file
+      for(int j=0; j<n_ratings_current_user; ++j) {
+        output_file << new_user_id << ' ' << ratings[j].item_id << ' ' << ratings[j].score << endl;
+      }
 
 			// Subsample comparisons for training 
 			for(int j=0; j<n_train; j++) {
@@ -87,6 +92,11 @@ bool makeComparisons(vector<rating> &ratings,
 				}
 			}
 
+      // Write test ratings for this user to output_file
+      for(int j=n_train; j<n_train+n_test; ++j) {
+        output_file << new_user_id << ' ' << ratings[j].item_id << ' ' << ratings[j].score << endl;
+      }
+
 			for(int j1=n_train; j1<n_train+n_test; j1++) {
 				for(int j2=j1+1; j2<n_train+n_test; j2++) {
 							
@@ -109,7 +119,8 @@ bool makeComparisons(vector<rating> &ratings,
 
 int main(int argc, char **argv) {
 
-	char *input_filename = nullptr, *train_filename = nullptr, *test_filename = nullptr;
+	char *input_filename = nullptr, *output_filename = nullptr;
+  char *train_filename = nullptr, *test_filename = nullptr;
 
 	if (argc < 2) {
 		cout << "Extracting a random comparions dataset from a rating dataset" << endl;
@@ -117,7 +128,8 @@ int main(int argc, char **argv) {
 		cout << "Options :  -n (number of training comparisons per user) " << endl;
 		cout << "           -t (number of test comparisons per item) " << endl;
 		cout << "           -i (input file name for rating dataset) " << endl; 
-		cout << "           -o1 (output file name for traning comparisons) " << endl; 
+		cout << "           -o0 (output file name for extracted users) " << endl;
+    cout << "           -o1 (output file name for traning comparisons) " << endl; 
 		cout << "           -o2 (output file name for test comparisons) " << endl; 
 
 		return 0;
@@ -147,6 +159,11 @@ int main(int argc, char **argv) {
 
 				case 'o':
 					switch(argv[i][2]) {
+            case '0':
+            output_filename = argv[++i];
+            cout << output_filename << endl;
+            break;
+
 						case '1':
 						train_filename = argv[++i];
 						cout << train_filename << endl;
@@ -173,9 +190,10 @@ int main(int argc, char **argv) {
 	input_file >> n_users >> n_items >> n_ratings;
 	cout << n_users << " users, " << n_items << " items, " << n_ratings << " ratings" << endl;
 
-	ofstream train_file, test_file;
-	if (train_filename == nullptr) train_file.open("comp_train.txt"); else train_file.open(train_filename);
-	if (test_filename == nullptr) test_file.open("comp_test.txt"); else test_file.open(test_filename);
+	ofstream output_file, train_file, test_file;
+	if (output_filename == nullptr) output_file.open("rating_extracted.rat"); else output_file.open(output_filename);
+	if (train_filename == nullptr) train_file.open("comp_train.cmp"); else train_file.open(train_filename);
+	if (test_filename == nullptr) test_file.open("comp_test.cmp"); else test_file.open(test_filename);
 
 	string line;
 	rating r;
@@ -189,14 +207,14 @@ int main(int argc, char **argv) {
 		getline(input_file, line);
 
 		if (current_user_id < r.user_id) {
-			if (makeComparisons(ratings, train_file, test_file, new_user_id, n_train, n_test)) new_user_id++;
+			if (makeComparisons(ratings, output_file, train_file, test_file, new_user_id, n_train, n_test)) new_user_id++;
 			ratings.clear();
 			current_user_id = r.user_id;
 		}
 		
 		ratings.push_back(r);
 	}
-	if (makeComparisons(ratings, train_file, test_file, new_user_id, n_train, n_test)) new_user_id++;
+	if (makeComparisons(ratings, output_file, train_file, test_file, new_user_id, n_train, n_test)) new_user_id++;
 
 	new_user_id--;
 

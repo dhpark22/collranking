@@ -49,7 +49,11 @@ struct comparison
   }
 };
 
+bool comp_userwise(comparison a, comparison b) { return ((a.user_id < b.user_id) || ((a.user_id == b.user_id) && (a.item1_id < b.item1_id))); }
 bool comp_itemwise(comparison a, comparison b) { return ((a.item1_id < b.item1_id) || ((a.item1_id == b.item1_id) && (a.user_id < b.user_id))); }
+
+bool comp_ratingwise(rating a, rating b) { return (a.score > b.score); }
+
 typedef struct rating rating;
 typedef struct comparison comparison;
 
@@ -64,12 +68,5 @@ Output:
 
 using dual coordinate descent with the equation listed in the report
 */
-
-// helper function in generating random integer between [start, end];
-int myrandom (int i) {
-        mt19937 gen(time(NULL));
-        uniform_int_distribution<int> randidx(0, i + 1);
-	return randidx(gen);
-}
 
 #endif

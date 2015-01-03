@@ -1,15 +1,13 @@
-// Project: Parallel Collaborative Ranking with Alt-rankSVM and SGD
+// Project: Parallel Collaborative Ranking with AltSVM and SGD
 // Collaborative work by Dohyung Park and Jin Zhang
 // Date: 11/26/2014
 //
 // The script will:
-// [1]  convert preference data into item-based graph (adjacency matrix format)
-// [2]  partition graph with Graclus
-// [3a] solve the problem with alternative rankSVM via liblineaer
-// [3b] solve the problem with stochasitic gradient descent in hogwild style
-// [3c] solve the problem with stochastic gradient descent in nomad style
+// [1a] solve the problem with alternative rankSVM via liblineaer
+// [1b] solve the problem with stochasitic gradient descent in hogwild style
+// [1c] solve the problem with stochastic gradient descent in nomad style
 //
-// Run: ./a.out [rating_file] [rating_format] [graph_output] [num_partitions]
+// Run: ./a.out [rating_file] [rating_format] [num_partitions]
 
 #include <queue>
 #include <random>
@@ -37,19 +35,26 @@ class Problem {
     double alpha, beta;                             // parameter for sgd
     vector<int> n_comps_by_user, n_comps_by_item;
 
-    vector<comparison>   train, train_item, test;
-    vector<int>          tridx, tridx_item;
+    vector<comparison>   train, train_user, train_item, test;
+    vector<int>          tridx, tridx_user, tridx_item;
+
+    vector<rating>       ratings;
+    vector<int>          rtidx;
+    vector<double>       dcg_max;
+    int ndcg_k = 10;
 
     bool sgd_step(const comparison&, const bool, const double, const double);
     void de_allocate();					            // deallocate U, V when they are used multiple times by different methods
-  
+    void initialize(); 
+ 
   public:
     Problem(int, int);				// default constructor
     ~Problem();					// default destructor
-    void read_data(char* train_file, char* test_file);	// read function
+    void read_data(char*, char*, char*);	// read function
     void alt_rankSVM(double l);
     void run_sgd_random(double l, double a, double b);
-    void run_sgd_nomad(double l, double a, double b);
+    void run_sgd_nomad_user(double, double, double);
+    void run_sgd_nomad_item(double, double, double);
     double compute_ndcg();
     double compute_testerror();
 };
@@ -67,11 +72,16 @@ Problem::~Problem () {
 	this->de_allocate();
 }
 
-void Problem::read_data(char* train_file, char* test_file) {
+void Problem::read_data(char* ratings_file, char* train_file, char* test_file) {
 
+  // Prepare to read files
   n_users = n_items = 0;
-  ifstream f(train_file);
-  if (f) {
+
+  ifstream f;
+
+  // Read training comparisons
+  f.open(train_file);
+  if (f.is_open()) {
     int uid, i1id, i2id, uid_current = 0;
     tridx.push_back(0);
     while (f >> uid >> i1id >> i2id) {
@@ -86,6 +96,9 @@ void Problem::read_data(char* train_file, char* test_file) {
 
       train.push_back(comparison(uid, i1id, i2id, 1));	// now user and item starts from 0
 
+      train_user.push_back(comparison(uid, i1id, i2id, 1));
+      train_user.push_back(comparison(uid, i2id, i1id, -1));
+ 
       train_item.push_back(comparison(uid, i1id, i2id, 1));
       train_item.push_back(comparison(uid, i2id, i1id, -1));
     }
@@ -97,6 +110,37 @@ void Problem::read_data(char* train_file, char* test_file) {
   }
   f.close();
 
+
+  // Constructing train_user structure for nomad_user
+
+  vector<int> ipart(n_threads+1);
+  for(int tid=0; tid<=n_threads; ++tid) {
+    ipart[tid] = n_items * tid / n_threads;
+  }
+
+  tridx_user.resize(n_users * n_threads + 1);
+  sort(train_user.begin(), train_user.end(), comp_userwise);
+ 
+  int idx = 0;
+  for(int uid=0; uid<n_users; ++uid) {
+    tridx_user[uid*n_threads] = idx;
+    for(int tid=1; tid<=n_threads; ++tid) {
+      while((train_user[idx].user_id == uid) && (train_user[idx].item1_id < ipart[tid])) ++idx;
+      tridx_user[uid*n_threads+tid] = idx;
+    }
+  }
+
+  for(int uid=0; uid<n_users; ++uid) {
+    for(int tid=0; tid<n_threads; ++tid) {
+      for(int idx=tridx_user[uid*n_threads+tid]; idx<tridx_user[uid*n_threads+tid+1]; ++idx) {
+        if (train_user[idx].user_id != uid) printf("ERROR indexing \n");
+        if (train_user[idx].item1_id < ipart[tid]) printf("ERROR indexing \n");
+        if (train_user[idx].item1_id >= ipart[tid+1]) printf("ERROR indexing \n");
+      }
+    }
+  }
+
+  // Constructing train_item structure for nomad_item
   vector<int> upart(n_threads+1);
   for(int tid=0; tid<=n_threads; ++tid) {
     upart[tid] = n_users * tid / n_threads;
@@ -105,7 +149,7 @@ void Problem::read_data(char* train_file, char* test_file) {
   tridx_item.resize(n_items * n_threads + 1);
   sort(train_item.begin(), train_item.end(), comp_itemwise);
  
-  int idx = 0;
+  idx = 0;
   for(int iid=0; iid<n_items; ++iid) {
     tridx_item[iid*n_threads] = idx;
     for(int tid=1; tid<=n_threads; ++tid) {
@@ -135,10 +179,10 @@ void Problem::read_data(char* train_file, char* test_file) {
 		++n_comps_by_item[train[i].item2_id];
 	}
 
-	ifstream f2(test_file);
-	if (f2) {
+	f.open(test_file);
+	if (f.is_open()) {
 		int u, i, j;
-		while (f2 >> u >> i >> j) {
+		while (f >> u >> i >> j) {
 			this->n_users = max(u, this->n_users);
 			this->n_items = max(i, max(j, this->n_items));
 			this->test.push_back(comparison(u-1, i-1, j-1, 1));
@@ -148,7 +192,50 @@ void Problem::read_data(char* train_file, char* test_file) {
 		printf("error in opening the testing file\n");
 		exit(EXIT_FAILURE);
 	}
-	f2.close();
+	f.close();
+
+  // Read ratings file for NDCG
+  vector<rating> ratings_current_user(0);
+ 
+  dcg_max.resize(n_users);
+  f.open(ratings_file);
+  if (f.is_open()) {
+    int uid, iid, score, uid_current = 0;
+    rtidx.push_back(0);
+    while (f >> uid >> iid >> score) {
+      --uid; --iid;
+
+      if (uid_current < uid) {
+        for(int j=0; j<ratings_current_user.size(); ++j) ratings.push_back(ratings_current_user[j]);
+        rtidx.push_back(ratings.size());
+
+        sort(ratings_current_user.begin(), ratings_current_user.end(), comp_ratingwise);
+        dcg_max[uid_current] = 0.;
+        for(int k=0; k<ndcg_k; ++k) dcg_max[uid_current] += (double)((1<<ratings_current_user[k].score) - 1) / log2(k+3); 
+        ratings_current_user.clear();
+
+        uid_current = uid;
+      }
+
+      ratings_current_user.push_back(rating(uid, iid, score));	// now user and item starts from 0
+    }
+
+        for(int j=0; j<ratings_current_user.size(); ++j) ratings.push_back(ratings_current_user[j]);
+        rtidx.push_back(ratings.size());
+
+        sort(ratings_current_user.begin(), ratings_current_user.end(), comp_ratingwise);
+        dcg_max[uid_current] = 0.;
+        for(int k=0; k<ndcg_k; ++k) dcg_max[uid_current] += (double)((1<<ratings_current_user[k].score) - 1) / log2(k+3); 
+        ratings_current_user.clear();
+ 
+  } else {
+    printf("Error in opening the extracted rating file!\n");
+    exit(EXIT_FAILURE);
+  }
+  f.close();
+
+  for(int i=0; i<n_users; ++i) if (dcg_max[i] < .1) printf("%d %f\n", i, dcg_max[i]);
+
 
   printf("%d users, %d items, %d training comps, %d test comps \n", this->n_users, this->n_items,
                                                                     this->n_train_comps,
@@ -350,13 +437,19 @@ bool Problem::sgd_step(const comparison& comp, const bool first_item_only, const
   return false;
 }
 
-void Problem::run_sgd_random(double l, double a, double b) {
+void Problem::initialize() {
 
-  printf("Random SGD with $d threads..\n", n_threads);
-  
   auto real_rand = std::bind(std::uniform_real_distribution<double>(0,1), std::mt19937(time(NULL)));
   for(int i=0; i<n_users*rank; i++) U[i] = real_rand();
   for(int i=0; i<n_items*rank; i++) V[i] = real_rand();
+
+}
+
+void Problem::run_sgd_random(double l, double a, double b) {
+
+  printf("Random SGD with $d threads..\n", n_threads);
+
+  this->initialize(); 
 
   lambda = l;
   alpha  = a;
@@ -404,22 +497,113 @@ void Problem::run_sgd_random(double l, double a, double b) {
       for(int i=0; i<n_items*rank; ++i) V[i] /= p;
     }
 */
+    double ndcg = this->compute_ndcg();
     double error = this->compute_testerror();
     if (error < 0.) break; 
-    printf("%d, %f, %f \n", n_threads, (icycle+1)*n_max_updates, error, omp_get_wtime() - time);
+    printf("%d, %f, %f, %f \n", (icycle+1)*n_max_updates, error, ndcg, omp_get_wtime() - time);
   
     if (icycle < 5) n_max_updates *= 4;
   } 
 
 }
 
-void Problem::run_sgd_nomad(double l, double a, double b) {
+void Problem::run_sgd_nomad_user(double l, double a, double b) {
+
+  printf("NOMAD SGD-user with $d threads..\n", n_threads);
+
+  this->initialize();
+
+  lambda = l;
+  alpha  = a;
+  beta   = b;
+
+  int n_max_updates = n_train_comps/1000/n_threads;
+  int queue_size = n_users+1;
+
+  int **queue = new int*[n_threads];
+  std::vector<int> front(n_threads), back(n_threads);
+  for(int i=0; i<n_threads; ++i) queue[i] = new int[queue_size];
+   
+  for(int i=0; i<n_threads; ++i) {
+    for(int j=(n_users*i/n_threads), k=0; j<(n_users*(i+1)/n_threads); ++j, ++k) queue[i][k] = j;
+    front[i] = 0;
+    back[i]  = (n_users*(i+1)/n_threads) - (n_users*i/n_threads);
+  }
+
+  std::vector<int> c(n_train_comps,0);
+
+  int n_updates_total = 0;
+
+  double time = omp_get_wtime();
+  for(int icycle=0; icycle<20; ++icycle) {
+ 		
+    int flag = -1;
+
+    #pragma omp parallel shared(n_updates_total, flag, queue, front, back)
+    {
+      std::mt19937 gen(n_threads*icycle+omp_get_thread_num());
+      std::uniform_int_distribution<int> randtid(0, n_threads-1);
+
+      int tid = omp_get_thread_num();
+      int tid_next = tid-1;
+      //if (tid_next < 0) tid_next = n_threads-1;
+
+      int n_updates = 1;
+
+      //printf("thread %d/%d beginning : users %d - %d  \n", tid, tid_next, queue[tid][front[tid]], queue[tid][back[tid]-1]);
+      while((flag == -1) && (n_updates < n_max_updates)) {
+        if (front[tid] != back[tid]) {
+                
+          int uid;
+                
+          //#pragma omp critical
+          {
+            uid = queue[tid][front[tid]];
+            front[tid] = (front[tid]+1) % queue_size;
+          }
+
+          for(int idx=tridx_user[uid*n_threads+tid]; idx<tridx_user[uid*n_threads+tid+1]; ++idx) {
+            sgd_step(train_user[idx], false, lambda, 
+                     alpha/(1.+beta*(double)(n_updates_total + n_updates*n_threads)));
+            ++n_updates;
+          }
+
+          tid_next = randtid(gen);
+          #pragma omp critical
+          {
+            queue[tid_next][back[tid_next]] = uid;
+            back[tid_next] = (back[tid_next]+1) % queue_size;
+          }
+        }
+        else {
+          flag = tid;
+        }
+	    }
+
+	    if (flag == -1) flag = tid;
+
+      #pragma omp atomic
+      n_updates_total += n_updates;
+
+    }
+
+    double error = this->compute_testerror();
+    if (error < 0.) break; 
+    printf("%d, %f, %f \n", n_updates_total, error, omp_get_wtime() - time);
+
+    if (icycle < 5) n_max_updates *= 4;
+
+  }
+
+  for(int i=0; i<n_threads; i++) delete[] queue[i];
+  delete[] queue;
+}
+
+void Problem::run_sgd_nomad_item(double l, double a, double b) {
 
   printf("NOMAD SGD with $d threads..\n", n_threads);
 
-  auto real_rand = std::bind(std::uniform_real_distribution<double>(0,1), std::mt19937(time(NULL)));
-  for(int i=0; i<n_users*rank; i++) U[i] = real_rand();
-  for(int i=0; i<n_items*rank; i++) V[i] = real_rand();
+  this->initialize();
 
   lambda = l;
   alpha  = a;
@@ -497,7 +681,7 @@ void Problem::run_sgd_nomad(double l, double a, double b) {
 
     double error = this->compute_testerror();
     if (error < 0.) break; 
-    printf("%d, %f, %f \n", n_threads, n_updates_total, error, omp_get_wtime() - time);
+    printf("%d, %f, %f \n", n_updates_total, error, omp_get_wtime() - time);
 
     if (icycle < 5) n_max_updates *= 4;
 
@@ -509,18 +693,46 @@ void Problem::run_sgd_nomad(double l, double a, double b) {
 
 double Problem::compute_ndcg() {
 	double ndcg_sum = 0.;
-	for(int i=0; i<n_users; i++) {
+	vector<pair<double,int> > ranking;
+ 
+  for(int uid=0; uid<n_users; ++uid) {
 		double dcg = 0.;
-		double norm = 1.;
-		// compute dcg
-		ndcg_sum += dcg / norm;
+  
+    ranking.clear();
+    for(int idx=rtidx[uid]; idx<rtidx[uid+1]; ++idx) {
+      double prod = 0.;
+      for(int k=0; k<rank; ++k) prod += U[uid * rank + k] * V[ratings[idx].item_id * rank + k];
+      ranking.push_back(pair<double,int>(prod,0));
+    }
+
+    double min_score = ranking[0].first;
+    for(int j=0; j<ranking.size(); ++j) min_score = min(min_score, ranking[j].first);
+
+    for(int k=0; k<ndcg_k; ++k) {
+      int topk_idx = -1;
+      double max_score = min_score - 1.;
+      for(int j=0; j<ranking.size(); ++j) {
+        if ((ranking[j].second == 0) && (ranking[j].first > max_score)) {
+          max_score = ranking[j].first;
+          topk_idx = j;
+        }
+      }
+      ranking[topk_idx].second = k;
+      
+      dcg += (double)((1<<ratings[rtidx[uid]+topk_idx].score) - 1) / log2((double)(k+3));
+    }
+   
+    if (dcg/dcg_max[uid] < .5) printf("%d %f %f\n", uid, dcg, dcg_max[uid]);
+ 
+    ndcg_sum += dcg / dcg_max[uid];
 	}
+
+  return ndcg_sum / (double)n_users;
 }
 
 double Problem::compute_testerror() {
 	int n_error = 0; 
 
-  return 0.;
     /* 
     for(int i=0; i<100; i++) {
         int idx = (int)((double)n_test_comps * (double)rand() / (double)RAND_MAX);
@@ -573,16 +785,16 @@ void Problem::de_allocate () {
 }
 
 int main (int argc, char* argv[]) {
-	if (argc < 4) {
+	if (argc < 5) {
 		cout << "Solve collaborative ranking problem with given training/testing data set" << endl;
-		cout << "Usage ./collaborative_ranking  : [training file] [testing file] [num_threads]" << endl;
+		cout << "Usage ./collaborative_ranking [rating file] [training file] [testing file] [num_threads]" << endl;
 		return 0;
 	}
 
-	int n_threads = atoi(argv[3]);
+	int n_threads = atoi(argv[4]);
 
 	Problem p(10, n_threads);		// rank = 10
-	p.read_data(argv[1], argv[2]);
+	p.read_data(argv[1], argv[2], argv[3]);
 	omp_set_dynamic(0);
 	omp_set_num_threads(n_threads);
 	double start = omp_get_wtime();
@@ -597,10 +809,15 @@ int main (int argc, char* argv[]) {
 	double m2 = omp_get_wtime() - start - m1;
   printf("%d threads, randSGD takes %f seconds until error %f \n", n_threads, m2, p.compute_testerror());
 
-  printf("Running NOMAD SGD.. \n");
-  p.run_sgd_nomad(1., 1e-1, 1e-5);
+  printf("Running NOMADi SGD.. \n");
+  p.run_sgd_nomad_item(1., 1e-1, 1e-5);
   double m3 = omp_get_wtime() - start - m2 - m1;
-  printf("%d threads, nomadSGD takes %f seconds, error %f \n", n_threads, m3, p.compute_testerror());
+  printf("%d threads, nomadSGDi takes %f seconds, error %f \n", n_threads, m3, p.compute_testerror());
+
+  printf("Running NOMADu SGD.. \n");
+  p.run_sgd_nomad_user(1., 1e-1, 1e-5);
+  double m4 = omp_get_wtime() - start - m3 - m2 - m1;
+  printf("%d threads, nomadSGDu takes %f seconds, error %f \n", n_threads, m4, p.compute_testerror());
 
   return 0;
 }
