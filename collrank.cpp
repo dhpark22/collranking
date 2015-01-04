@@ -22,6 +22,7 @@
 #include <vector>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include "collrank.h"
 
 using namespace std;
@@ -57,282 +58,296 @@ class Problem {
     void run_sgd_nomad_item(double, double, double);
     double compute_ndcg();
     double compute_testerror();
-};
+  };
 
-// may be more parameters can be specified here
-Problem::Problem (int r, int np) {
-	this->rank = r;
-	this->is_allocated = false;
-	this->is_clustered = false;
-	this->n_threads = np;
-}
+  // may be more parameters can be specified here
+  Problem::Problem (int r, int np) {
+    this->rank = r;
+    this->is_allocated = false;
+    this->is_clustered = false;
+    this->n_threads = np;
+  }
 
-Problem::~Problem () {
-	//printf("calling the destructor\n");
-	this->de_allocate();
-}
+  Problem::~Problem () {
+    //printf("calling the destructor\n");
+    this->de_allocate();
+  }
 
-void Problem::read_data(char* ratings_file, char* train_file, char* test_file) {
+  void Problem::read_data(char* ratings_file, char* train_file, char* test_file) {
 
-  // Prepare to read files
-  n_users = n_items = 0;
+    // Prepare to read files
+    n_users = n_items = 0;
 
-  ifstream f;
+    ifstream f;
 
-  // Read training comparisons
-  f.open(train_file);
-  if (f.is_open()) {
-    int uid, i1id, i2id, uid_current = 0;
-    tridx.push_back(0);
-    while (f >> uid >> i1id >> i2id) {
-      n_users = max(uid, n_users);
-      n_items = max(i1id, max(i2id, n_items));
-      --uid; --i1id; --i2id;
+    // Read training comparisons
+    f.open(train_file);
+    if (f.is_open()) {
+      int uid, i1id, i2id, uid_current = 0;
+      tridx.push_back(0);
+      while (f >> uid >> i1id >> i2id) {
+        n_users = max(uid, n_users);
+        n_items = max(i1id, max(i2id, n_items));
+        --uid; --i1id; --i2id;
 
-      if (uid_current < uid) {
-        tridx.push_back(train.size());
-        uid_current = uid;
+        if (uid_current < uid) {
+          tridx.push_back(train.size());
+          uid_current = uid;
+        }
+
+        train.push_back(comparison(uid, i1id, i2id, 1));	// now user and item starts from 0
+
+        train_user.push_back(comparison(uid, i1id, i2id, 1));
+        train_user.push_back(comparison(uid, i2id, i1id, -1));
+   
+        train_item.push_back(comparison(uid, i1id, i2id, 1));
+        train_item.push_back(comparison(uid, i2id, i1id, -1));
       }
-
-      train.push_back(comparison(uid, i1id, i2id, 1));	// now user and item starts from 0
-
-      train_user.push_back(comparison(uid, i1id, i2id, 1));
-      train_user.push_back(comparison(uid, i2id, i1id, -1));
- 
-      train_item.push_back(comparison(uid, i1id, i2id, 1));
-      train_item.push_back(comparison(uid, i2id, i1id, -1));
+      tridx.push_back(train.size());
+      n_train_comps = train.size();
+    } else {
+      printf("Error in opening the training file!\n");
+      exit(EXIT_FAILURE);
     }
-    tridx.push_back(train.size());
-    n_train_comps = train.size();
-  } else {
-    printf("Error in opening the training file!\n");
-    exit(EXIT_FAILURE);
-  }
-  f.close();
+    f.close();
 
 
-  // Constructing train_user structure for nomad_user
+    // Constructing train_user structure for nomad_user
 
-  vector<int> ipart(n_threads+1);
-  for(int tid=0; tid<=n_threads; ++tid) {
-    ipart[tid] = n_items * tid / n_threads;
-  }
-
-  tridx_user.resize(n_users * n_threads + 1);
-  sort(train_user.begin(), train_user.end(), comp_userwise);
- 
-  int idx = 0;
-  for(int uid=0; uid<n_users; ++uid) {
-    tridx_user[uid*n_threads] = idx;
-    for(int tid=1; tid<=n_threads; ++tid) {
-      while((train_user[idx].user_id == uid) && (train_user[idx].item1_id < ipart[tid])) ++idx;
-      tridx_user[uid*n_threads+tid] = idx;
+    vector<int> ipart(n_threads+1);
+    for(int tid=0; tid<=n_threads; ++tid) {
+      ipart[tid] = n_items * tid / n_threads;
     }
-  }
 
-  for(int uid=0; uid<n_users; ++uid) {
-    for(int tid=0; tid<n_threads; ++tid) {
-      for(int idx=tridx_user[uid*n_threads+tid]; idx<tridx_user[uid*n_threads+tid+1]; ++idx) {
-        if (train_user[idx].user_id != uid) printf("ERROR indexing \n");
-        if (train_user[idx].item1_id < ipart[tid]) printf("ERROR indexing \n");
-        if (train_user[idx].item1_id >= ipart[tid+1]) printf("ERROR indexing \n");
+    tridx_user.resize(n_users * n_threads + 1);
+    sort(train_user.begin(), train_user.end(), comp_userwise);
+   
+    int idx = 0;
+    for(int uid=0; uid<n_users; ++uid) {
+      tridx_user[uid*n_threads] = idx;
+      for(int tid=1; tid<=n_threads; ++tid) {
+        while((train_user[idx].user_id == uid) && (train_user[idx].item1_id < ipart[tid])) ++idx;
+        tridx_user[uid*n_threads+tid] = idx;
       }
     }
-  }
 
-  // Constructing train_item structure for nomad_item
-  vector<int> upart(n_threads+1);
-  for(int tid=0; tid<=n_threads; ++tid) {
-    upart[tid] = n_users * tid / n_threads;
-  }
-
-  tridx_item.resize(n_items * n_threads + 1);
-  sort(train_item.begin(), train_item.end(), comp_itemwise);
- 
-  idx = 0;
-  for(int iid=0; iid<n_items; ++iid) {
-    tridx_item[iid*n_threads] = idx;
-    for(int tid=1; tid<=n_threads; ++tid) {
-      while((train_item[idx].item1_id == iid) && (train_item[idx].user_id < upart[tid])) ++idx;
-      tridx_item[iid*n_threads+tid] = idx;
-    }
-  }
-
-  for(int iid=0; iid<n_items; ++iid) {
-    for(int tid=0; tid<n_threads; ++tid) {
-      for(int idx=tridx_item[iid*n_threads+tid]; idx<tridx_item[iid*n_threads+tid+1]; ++idx) {
-        if (train_item[idx].item1_id != iid) printf("ERROR indexing \n");
-        if (train_item[idx].user_id < upart[tid]) printf("ERROR indexing \n");
-        if (train_item[idx].user_id >= upart[tid+1]) printf("ERROR indexing \n");
-      }
-    }
-  }
-
-	n_comps_by_user.clear(); n_comps_by_user.resize(this->n_users);
-	n_comps_by_item.clear(); n_comps_by_item.resize(this->n_items);
-	for(int i=0; i<this->n_users; i++) n_comps_by_user[i] = 0;
-	for(int i=0; i<this->n_items; i++) n_comps_by_item[i] = 0;
-
-	for(int i=0; i<this->n_train_comps; i++) {
-		++n_comps_by_user[train[i].user_id];
-		++n_comps_by_item[train[i].item1_id];
-		++n_comps_by_item[train[i].item2_id];
-	}
-
-	f.open(test_file);
-	if (f.is_open()) {
-		int u, i, j;
-		while (f >> u >> i >> j) {
-			this->n_users = max(u, this->n_users);
-			this->n_items = max(i, max(j, this->n_items));
-			this->test.push_back(comparison(u-1, i-1, j-1, 1));
-		}
-		this->n_test_comps = this->test.size();
-	} else {
-		printf("error in opening the testing file\n");
-		exit(EXIT_FAILURE);
-	}
-	f.close();
-
-  // Read ratings file for NDCG
-  vector<rating> ratings_current_user(0);
- 
-  dcg_max.resize(n_users);
-  f.open(ratings_file);
-  if (f.is_open()) {
-    int uid, iid, score, uid_current = 0;
-    rtidx.push_back(0);
-    while (f >> uid >> iid >> score) {
-      --uid; --iid;
-
-      if (uid_current < uid) {
-        for(int j=0; j<ratings_current_user.size(); ++j) ratings.push_back(ratings_current_user[j]);
-        rtidx.push_back(ratings.size());
-
-        sort(ratings_current_user.begin(), ratings_current_user.end(), comp_ratingwise);
-        dcg_max[uid_current] = 0.;
-        for(int k=0; k<ndcg_k; ++k) dcg_max[uid_current] += (double)((1<<ratings_current_user[k].score) - 1) / log2(k+3); 
-        ratings_current_user.clear();
-
-        uid_current = uid;
-      }
-
-      ratings_current_user.push_back(rating(uid, iid, score));	// now user and item starts from 0
-    }
-
-        for(int j=0; j<ratings_current_user.size(); ++j) ratings.push_back(ratings_current_user[j]);
-        rtidx.push_back(ratings.size());
-
-        sort(ratings_current_user.begin(), ratings_current_user.end(), comp_ratingwise);
-        dcg_max[uid_current] = 0.;
-        for(int k=0; k<ndcg_k; ++k) dcg_max[uid_current] += (double)((1<<ratings_current_user[k].score) - 1) / log2(k+3); 
-        ratings_current_user.clear();
- 
-  } else {
-    printf("Error in opening the extracted rating file!\n");
-    exit(EXIT_FAILURE);
-  }
-  f.close();
-
-  for(int i=0; i<n_users; ++i) if (dcg_max[i] < .1) printf("%d %f\n", i, dcg_max[i]);
-
-
-  printf("%d users, %d items, %d training comps, %d test comps \n", this->n_users, this->n_items,
-                                                                    this->n_train_comps,
-                                                                    this->n_test_comps);
-
-	this->U = new double [this->n_users * this->rank];
-	this->V = new double [this->n_items * this->rank];
-
-}	
-
-void Problem::alt_rankSVM (double l) {
-
-  printf("Alternating rankSVM with %d threads.. \n", n_threads);
-
-  lambda = l;
-
-  int n_max_updates = n_train_comps/1000/n_threads;
-
-  double *alphaV = new double[this->n_train_comps];
-  double *alphaU = new double[this->n_train_comps];
-  memset(alphaU, 0, sizeof(double) * this->n_train_comps);
-  memset(alphaV, 0, sizeof(double) * this->n_train_comps);
-	
-  // Alternating RankSVM
-  for(int i=0; i<n_users*rank; ++i) U[i] = 1.;
-  memset(V, 0, sizeof(double) * n_items * rank);
-  //printf("Initial test error : %f \n", this->compute_testerror());
-
-  double start = omp_get_wtime(), error;
-  for (int OuterIter = 0; OuterIter < 10; ++OuterIter) {
-    // Learning V 
-    memset(V, 0, sizeof(double) * n_items * rank);
-    #pragma omp parallel for
-    for(int i=0; i<n_train_comps; ++i) {
-     if (alphaV[i] > 1e-10) {
-        double *user_vec  = &U[train[i].user_id  * rank];
-        double *item1_vec = &V[train[i].item1_id * rank];
-        double *item2_vec = &V[train[i].item2_id * rank];
-        for(int j=0; j<rank; ++j) {
-          double d = alphaV[i] * user_vec[j];
-          item1_vec[j] += d;
-          item2_vec[j] -= d;  
+    for(int uid=0; uid<n_users; ++uid) {
+      for(int tid=0; tid<n_threads; ++tid) {
+        for(int idx=tridx_user[uid*n_threads+tid]; idx<tridx_user[uid*n_threads+tid+1]; ++idx) {
+          if (train_user[idx].user_id != uid) printf("ERROR indexing \n");
+          if (train_user[idx].item1_id < ipart[tid]) printf("ERROR indexing \n");
+          if (train_user[idx].item1_id >= ipart[tid+1]) printf("ERROR indexing \n");
         }
       }
-    }		
-
-    double p = 0.;
-    #pragma omp parallel for reduction(+:p)
-    for(int i=0; i<n_items*rank; ++i) { 
-      double d = V[i]*V[i];
-      p += d;
     }
 
-    if (p > 1e-4) {
-      p = sqrt(p);
-
-      #pragma omp parallel for
-      for(int i=0; i<n_items*rank; ++i) V[i] /= p;
-
-      #pragma omp parallel for
-      for(int i=0; i<n_train_comps; ++i) alphaV[i] /= p;
+    // Constructing train_item structure for nomad_item
+    vector<int> upart(n_threads+1);
+    for(int tid=0; tid<=n_threads; ++tid) {
+      upart[tid] = n_users * tid / n_threads;
     }
 
-    #pragma omp parallel
-    {
-      int i_thread = omp_get_thread_num();
+    tridx_item.resize(n_items * n_threads + 1);
+    sort(train_item.begin(), train_item.end(), comp_itemwise);
+   
+    idx = 0;
+    for(int iid=0; iid<n_items; ++iid) {
+      tridx_item[iid*n_threads] = idx;
+      for(int tid=1; tid<=n_threads; ++tid) {
+        while((train_item[idx].item1_id == iid) && (train_item[idx].user_id < upart[tid])) ++idx;
+        tridx_item[iid*n_threads+tid] = idx;
+      }
+    }
 
-      std::mt19937 gen(n_threads*OuterIter + i_thread);
-      std::uniform_int_distribution<int> randidx(0, n_train_comps-1);
+    for(int iid=0; iid<n_items; ++iid) {
+      for(int tid=0; tid<n_threads; ++tid) {
+        for(int idx=tridx_item[iid*n_threads+tid]; idx<tridx_item[iid*n_threads+tid+1]; ++idx) {
+          if (train_item[idx].item1_id != iid) printf("ERROR indexing \n");
+          if (train_item[idx].user_id < upart[tid]) printf("ERROR indexing \n");
+          if (train_item[idx].user_id >= upart[tid+1]) printf("ERROR indexing \n");
+        }
+      }
+    }
 
-      for(int n_updates=0; n_updates<n_max_updates; ++n_updates) {
-        int idx = randidx(gen);
-        double *user_vec  = &U[train[idx].user_id  * rank];
-        double *item1_vec = &V[train[idx].item1_id * rank];
-        double *item2_vec = &V[train[idx].item2_id * rank];
-    
-        double p1 = 0., p2 = 0., d = 0.;
-        for(int j=0; j<rank; ++j) {
-          d = item1_vec[j] - item2_vec[j];
-          p1 += user_vec[j] * d;
-          p2 += user_vec[j] * user_vec[j];
-        } 
+    n_comps_by_user.clear(); n_comps_by_user.resize(this->n_users);
+    n_comps_by_item.clear(); n_comps_by_item.resize(this->n_items);
+    for(int i=0; i<this->n_users; i++) n_comps_by_user[i] = 0;
+    for(int i=0; i<this->n_items; i++) n_comps_by_item[i] = 0;
 
-        double delta = (1. - p1 - alphaV[idx]/2.*lambda) / (p2*2. + .5*lambda);
-        delta = max(0., delta + alphaV[idx]) - alphaV[idx];      
+    for(int i=0; i<this->n_train_comps; i++) {
+      ++n_comps_by_user[train[i].user_id];
+      ++n_comps_by_item[train[i].item1_id];
+      ++n_comps_by_item[train[i].item2_id];
+    }
+
+    f.open(test_file);
+    if (f.is_open()) {
+      int u, i, j;
+      while (f >> u >> i >> j) {
+        this->n_users = max(u, this->n_users);
+        this->n_items = max(i, max(j, this->n_items));
+        this->test.push_back(comparison(u-1, i-1, j-1, 1));
+      }
+      this->n_test_comps = this->test.size();
+    } else {
+      printf("error in opening the testing file\n");
+      exit(EXIT_FAILURE);
+    }
+    f.close();
+
+    // Read ratings file for NDCG
+    vector<rating> ratings_current_user(0);
+    string user_str, attribute_str;
+    stringstream attribute_sstr;  
  
-        alphaV[idx] += delta;
-        for(int j=0; j<rank; ++j) {
-          item1_vec[j] += delta * user_vec[j]; 
-          item2_vec[j] -= delta * user_vec[j]; 
+    dcg_max.resize(n_users);
+    f.open(ratings_file);
+    if (f.is_open()) {
+      int uid = 0, iid, score, uid_current = 0;
+      rtidx.push_back(0);
+      
+      while(1) {
+        getline(f, user_str);
+
+        size_t pos1 = 0, pos2;
+        while(1) {
+          pos2 = user_str.find(':', pos1); if (pos2 == string::npos) break; 
+          attribute_str = user_str.substr(pos1, pos2-pos1);
+          attribute_sstr.clear(); attribute_sstr.str(attribute_str);
+          attribute_sstr >> iid; --iid;
+          pos1 = pos2+1;
+
+          pos2 = user_str.find(' ', pos1); attribute_str = user_str.substr(pos1, pos2-pos1);
+          attribute_sstr.clear(); attribute_sstr.str(attribute_str);
+          attribute_sstr >> score;
+          pos1 = pos2+1;
+
+          ratings_current_user.push_back(rating(uid, iid, score));
+        }
+        if (ratings_current_user.size() == 0) break;
+          
+        for(int j=0; j<ratings_current_user.size(); ++j) ratings.push_back(ratings_current_user[j]);
+        rtidx.push_back(ratings.size());
+
+        sort(ratings_current_user.begin(), ratings_current_user.end(), comp_ratingwise);
+        dcg_max[uid] = 0.;
+        for(int k=0; k<ndcg_k; ++k) {
+          dcg_max[uid] += (double)((1<<ratings_current_user[k].score) - 1) / log2(k+3); 
+          if (uid == 0) printf("%d:%d ",ratings_current_user[k].item_id,ratings_current_user[k].score);
+        }
+        if (uid == 0) printf("\n");
+     
+        ratings_current_user.clear();
+ 
+        ++uid;
+      }
+
+    } else {
+      printf("Error in opening the extracted rating file!\n");
+      exit(EXIT_FAILURE);
+    }
+    f.close();
+
+    for(int i=0; i<n_users; ++i) if (dcg_max[i] < .1) printf("%d %f\n", i, dcg_max[i]);
+
+
+    printf("%d users, %d items, %d training comps, %d test comps \n", this->n_users, this->n_items,
+                                                                      this->n_train_comps,
+                                                                      this->n_test_comps);
+
+    this->U = new double [this->n_users * this->rank];
+    this->V = new double [this->n_items * this->rank];
+
+  }	
+
+  void Problem::alt_rankSVM (double l) {
+
+    printf("Alternating rankSVM with %d threads.. \n", n_threads);
+
+    lambda = l;
+
+    int n_max_updates = n_train_comps/n_threads;
+
+    double *alphaV = new double[this->n_train_comps];
+    double *alphaU = new double[this->n_train_comps];
+    memset(alphaU, 0, sizeof(double) * this->n_train_comps);
+    memset(alphaV, 0, sizeof(double) * this->n_train_comps);
+    
+    // Alternating RankSVM
+    for(int i=0; i<n_users*rank; ++i) U[i] = 1.;
+    memset(V, 0, sizeof(double) * n_items * rank);
+    //printf("Initial test error : %f \n", this->compute_testerror());
+
+    double start = omp_get_wtime(), error, ndcg;
+    for (int OuterIter = 0; OuterIter < 5; ++OuterIter) {
+      // Learning V 
+      memset(V, 0, sizeof(double) * n_items * rank);
+      #pragma omp parallel for
+      for(int i=0; i<n_train_comps; ++i) {
+       if (alphaV[i] > 1e-10) {
+          double *user_vec  = &U[train[i].user_id  * rank];
+          double *item1_vec = &V[train[i].item1_id * rank];
+          double *item2_vec = &V[train[i].item2_id * rank];
+          for(int j=0; j<rank; ++j) {
+            double d = alphaV[i] * user_vec[j];
+            item1_vec[j] += d;
+            item2_vec[j] -= d;  
+          }
+        }
+      }		
+
+      double p = 0.;
+      #pragma omp parallel for reduction(+:p)
+      for(int i=0; i<n_items*rank; ++i) { 
+        double d = V[i]*V[i];
+        p += d;
+      }
+
+      if (p > 1e-4) {
+        p = sqrt(p);
+
+        #pragma omp parallel for
+        for(int i=0; i<n_items*rank; ++i) V[i] /= p;
+
+        #pragma omp parallel for
+        for(int i=0; i<n_train_comps; ++i) alphaV[i] /= p;
+      }
+
+      #pragma omp parallel
+      {
+        int i_thread = omp_get_thread_num();
+
+        std::mt19937 gen(n_threads*OuterIter + i_thread);
+        std::uniform_int_distribution<int> randidx(0, n_train_comps-1);
+
+        for(int n_updates=0; n_updates<n_max_updates; ++n_updates) {
+          int idx = randidx(gen);
+          double *user_vec  = &U[train[idx].user_id  * rank];
+          double *item1_vec = &V[train[idx].item1_id * rank];
+          double *item2_vec = &V[train[idx].item2_id * rank];
+      
+          double p1 = 0., p2 = 0., d = 0.;
+          for(int j=0; j<rank; ++j) {
+            d = item1_vec[j] - item2_vec[j];
+            p1 += user_vec[j] * d;
+            p2 += user_vec[j] * user_vec[j];
+          } 
+
+          double delta = (1. - p1 - alphaV[idx]/2.*lambda) / (p2*2. + .5*lambda);
+          delta = max(0., delta + alphaV[idx]) - alphaV[idx];      
+   
+          alphaV[idx] += delta;
+          for(int j=0; j<rank; ++j) {
+            item1_vec[j] += delta * user_vec[j]; 
+            item2_vec[j] -= delta * user_vec[j]; 
         }
       }
 
 		}
 
     error = this->compute_testerror();
-	  printf("%d, %f, %f \n", OuterIter, error, omp_get_wtime() - start);
+	  ndcg  = this->compute_ndcg();
+    printf("%d, %f, %f, %f \n", OuterIter, error, ndcg, omp_get_wtime() - start);
 	
     // Learning U
     memset(U, 0, sizeof(double) * n_users * rank);
@@ -392,9 +407,10 @@ void Problem::alt_rankSVM (double l) {
 		}
 
     error = this->compute_testerror();
- 	  printf("%d, %f, %f \n", OuterIter, error, omp_get_wtime() - start);
+    ndcg  = this->compute_ndcg();
+ 	  printf("%d, %f, %f, %f \n", OuterIter, error, ndcg, omp_get_wtime() - start);
 
-    if (OuterIter < 5) n_max_updates *= 4;	
+    if (OuterIter < 5) n_max_updates *= 2;	
   }
 
 	delete [] alphaV;
@@ -588,8 +604,9 @@ void Problem::run_sgd_nomad_user(double l, double a, double b) {
     }
 
     double error = this->compute_testerror();
+    double ndcg = this->compute_ndcg();
     if (error < 0.) break; 
-    printf("%d, %f, %f \n", n_updates_total, error, omp_get_wtime() - time);
+    printf("%d, %f, %f, %f \n", n_updates_total, error, ndcg, omp_get_wtime() - time);
 
     if (icycle < 5) n_max_updates *= 4;
 
@@ -680,8 +697,9 @@ void Problem::run_sgd_nomad_item(double l, double a, double b) {
     }
 
     double error = this->compute_testerror();
+    double ndcg = this->compute_ndcg();
     if (error < 0.) break; 
-    printf("%d, %f, %f \n", n_updates_total, error, omp_get_wtime() - time);
+    printf("%d, %f, %f, %f \n", n_updates_total, error, ndcg, omp_get_wtime() - time);
 
     if (icycle < 5) n_max_updates *= 4;
 
@@ -708,7 +726,7 @@ double Problem::compute_ndcg() {
     double min_score = ranking[0].first;
     for(int j=0; j<ranking.size(); ++j) min_score = min(min_score, ranking[j].first);
 
-    for(int k=0; k<ndcg_k; ++k) {
+    for(int k=1; k<=ndcg_k; ++k) {
       int topk_idx = -1;
       double max_score = min_score - 1.;
       for(int j=0; j<ranking.size(); ++j) {
@@ -718,12 +736,17 @@ double Problem::compute_ndcg() {
         }
       }
       ranking[topk_idx].second = k;
-      
-      dcg += (double)((1<<ratings[rtidx[uid]+topk_idx].score) - 1) / log2((double)(k+3));
+     
+      dcg += (double)((1<<ratings[rtidx[uid]+topk_idx].score) - 1) / log2((double)(k+2));
     }
    
-    if (dcg/dcg_max[uid] < .5) printf("%d %f %f\n", uid, dcg, dcg_max[uid]);
- 
+/*
+    if (dcg/dcg_max[uid] < .8) {
+      for(int j=0; j<ranking.size(); ++j) printf("%d:%d:%f:%d ", ratings[rtidx[uid]+j].item_id, ratings[rtidx[uid]+j].score, ranking[j].first, ranking[j].second); 
+      printf("\n %d %f %f\n", uid, dcg, dcg_max[uid]);
+    } 
+*/
+
     ndcg_sum += dcg / dcg_max[uid];
 	}
 
@@ -745,7 +768,7 @@ double Problem::compute_testerror() {
     }
     printf("\n");
     */
-
+/*
   for(int i=0; i<n_users*rank; i++)
     if ((U[i] > 1e2) || (U[i] < -1e2)) {
       printf("U large number : %d %d %f \n", i/rank, i%rank, U[i]);   
@@ -757,7 +780,7 @@ double Problem::compute_testerror() {
       printf("V large number : %d %d %f \n", i/rank, i%rank, V[i]);   
       return -1.;
     }
-
+*/
 //  for(int i=0; i<rank; ++i) printf("%f ", U[i]); printf("\n");
 //  for(int i=0; i<rank; ++i) printf("%f ", V[i]); printf("\n");
 
@@ -794,18 +817,22 @@ int main (int argc, char* argv[]) {
 	int n_threads = atoi(argv[4]);
 
 	Problem p(10, n_threads);		// rank = 10
+
+  printf("Reading data files..\n");
+
 	p.read_data(argv[1], argv[2], argv[3]);
 	omp_set_dynamic(0);
 	omp_set_num_threads(n_threads);
 	double start = omp_get_wtime();
   
   printf("Running AltSVM.. \n");  
-	p.alt_rankSVM(1.);
+	p.alt_rankSVM(100.);
 	double m1 = omp_get_wtime() - start;
 	printf("%d threads, rankSVM takes %f seconds until error %f \n", n_threads, m1, p.compute_testerror());
-	
+
+/*
   printf("Running Random SGD.. \n");
-  p.run_sgd_random(1., 1e-1, 1e-5);
+  p.run_sgd_random(1., .1, 1e-5);
 	double m2 = omp_get_wtime() - start - m1;
   printf("%d threads, randSGD takes %f seconds until error %f \n", n_threads, m2, p.compute_testerror());
 
@@ -818,6 +845,6 @@ int main (int argc, char* argv[]) {
   p.run_sgd_nomad_user(1., 1e-1, 1e-5);
   double m4 = omp_get_wtime() - start - m3 - m2 - m1;
   printf("%d threads, nomadSGDu takes %f seconds, error %f \n", n_threads, m4, p.compute_testerror());
-
+*/
   return 0;
 }

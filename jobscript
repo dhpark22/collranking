@@ -11,13 +11,10 @@
 #SBATCH --mail-type=end
 
 ./error.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 1 
-./speed.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 1
+./speed.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 1 
 
 ./error.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 4 
-./speed.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 4
-
-./error.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 8 
-./speed.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 8
+./speed.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 4 
 
 ./error.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 16 
 ./speed.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 16
