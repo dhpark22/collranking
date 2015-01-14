@@ -282,7 +282,7 @@ void Problem::run_altsvm(double l, init_option_t option) {
 
   lambda = l;
 
-  int n_max_updates = n_train_comps/100/n_threads;
+  int n_max_updates = n_train_comps*10/n_threads;
 
   double *alphaV = new double[this->n_train_comps];
   double *alphaU = new double[this->n_train_comps];
@@ -988,12 +988,12 @@ int main (int argc, char* argv[]) {
 	p.run_altsvm(1., INIT_RANDOM);
 	printf("%d threads, rankSVM takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
 
-/*
   time = omp_get_wtime();
   printf("Running Random SGD with random init.. \n");
   p.run_sgd_random(100., 1e-1, 1e-5, INIT_RANDOM);
   printf("%d threads, randSGD takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
 
+/*
   time = omp_get_wtime();
   printf("Running Random SGD with SVD init.. \n");
   p.run_sgd_random(100., 1e-1, 1e-5, INIT_SVD);
