@@ -53,6 +53,8 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
 			}
 		}
 
+    cout << comp_list.size() << " comps ";
+
 		// Subsample comparisons only for the users with enough comparisons
 		if (comp_list.size() >= n_train + n_test) {
 
@@ -80,8 +82,10 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
       // Write train ratings and test ratings for the competitors
       // Train ratings : The ratings involved in training comparisons
       // Test ratings  : All of the ratings by the user
+      int c = 0;
       for(int j=0; j<n_ratings_current_user; ++j) {
         if (check[j]) {
+          ++c;
           train_rating_lsvm << ratings[j].item_id << ':' << ratings[j].score << ' ';
           //train_rating_prea << new_user_id << ' ' << ratings[j].item_id << ' ' << ratings[j].score << endl;
           train_ratings.push_back(rating(new_user_id, ratings[j].item_id, ratings[j].score));
@@ -90,6 +94,8 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
           test_rating_lsvm << ratings[j].item_id << ':' << ratings[j].score << ' ';
           test_rating_prea << new_user_id << ' ' << ratings[j].item_id << ' ' << ratings[j].score << endl;
       }
+
+      printf(" (%d/%d) ", c, n_ratings_current_user);
 
       //printf("%d %d\n", new_user_id, comp_list.size()); 
 
@@ -136,14 +142,14 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
       // Write ratings for competitors
       for(int j=0; j<n_train; ++j) {
         train_rating_lsvm << ratings[j].item_id << ':' << ratings[j].score << ' ';
-        //train_ratings.push_back(rating(new_user_id, ratings[j].item_id, ratings[j].score));
+        train_ratings.push_back(rating(new_user_id, ratings[j].item_id, ratings[j].score));
       }
       train_rating_lsvm << endl;
 
       for(int j=n_train; j<ratings.size(); ++j) {
         test_rating_lsvm  << ratings[j].item_id << ':' << ratings[j].score << ' ';
-        //test_rating_prea  << new_user_id << ' ' << ratings[j].item_id << ' ' << ratings[j].score << endl; 
-        //train_ratings.push_back(rating(new_user_id, ratings[j].item_id, ratings[j].score));
+        test_rating_prea  << new_user_id << ' ' << ratings[j].item_id << ' ' << ratings[j].score << endl; 
+        train_ratings.push_back(rating(new_user_id, ratings[j].item_id, ratings[j].score));
       }
       test_rating_lsvm  << endl;
 
@@ -196,6 +202,8 @@ bool CompExtractor::Extract(char *input_filename, char *output_filename) {
   test_rating_lsvm.open (output_header + "_test_rating_lsvm.dat");
   test_rating_prea.open (output_header + "_test_rating_prea.dat");
 
+  if (SAMPLE_BY_COMPARISONS) printf("Sampling %d comps for each user\n", n_train); else printf("Sampling %d ratings for each user\n", n_train);
+
 	string line;
 	int user_id, item_id, score;
 
@@ -226,7 +234,7 @@ bool CompExtractor::Extract(char *input_filename, char *output_filename) {
   else cout << " dropped" << endl;
 
   --new_user_id;
-/*	
+	
   // write arff file for prea
   sort(train_ratings.begin(), train_ratings.end(), rate_userwise); 
   train_rating_prea << "@RELATION movievote" << endl << endl;
@@ -247,7 +255,7 @@ bool CompExtractor::Extract(char *input_filename, char *output_filename) {
     }
     train_rating_prea << (n_items+1) << " 0000-00-00}" << endl;
   }
-*/
+
 	input_file.close();
 	train_rating_lsvm.close();
   train_rating_prea.close();
@@ -256,7 +264,7 @@ bool CompExtractor::Extract(char *input_filename, char *output_filename) {
   train_file.close();
 	test_file.close();
 
-	cout << "Comparisons for " << new_user_id << " users extracted" << endl;
+	cout << "Comparisons for " << new_user_id << " users, " << n_items <<" items extracted" << endl;
 }
 
 
@@ -276,14 +284,14 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 
-  bool SAMPLE_BY_COMPARISONS = true;
+  bool S = true;
   int n_train = 100, n_test = 100;
 
 	for(int i=1; i<argc; i++) {
 		if (argv[i][0] == '-') {
 			switch(argv[i][1]) {
 				case 'c':	// sampling items
-					SAMPLE_BY_COMPARISONS = false;
+					S = false;
 					break;
 
 				case 'n':	// number for the sampling
@@ -309,7 +317,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
-  CompExtractor extractor(n_train, n_test, SAMPLE_BY_COMPARISONS); 
+  CompExtractor extractor(n_train, n_test, S); 
   if (!extractor.Extract(input_filename, output_filename)) { cerr << "Cannot extract!" << endl; exit(11); }
 
 }

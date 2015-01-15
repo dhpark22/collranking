@@ -58,9 +58,13 @@ class Problem {
     void run_sgd_random(double, double, double, init_option_t);
     void run_sgd_nomad_user(double, double, double, init_option_t);
     void run_sgd_nomad_item(double, double, double, init_option_t);
+    double compute_Unormsq();
+    double compute_Vnormsq();
     double compute_loss();
     double compute_ndcg();
     double compute_testerror();
+
+    void evaluate(string); // evaluate results from other algorithms in lsvm format 
   };
 
   // may be more parameters can be specified here
@@ -259,6 +263,18 @@ class Problem {
 
   }	
 
+  double Problem::compute_Unormsq() {
+    double p = 0.;
+    for(int i=0; i<n_users*rank; ++i) p += U[i]*U[i];
+    return p;
+  }
+
+  double Problem::compute_Vnormsq() {
+    double p = 0.;
+    for(int i=0; i<n_items*rank; ++i) p += V[i]*V[i];
+    return p;
+  }
+
   double Problem::compute_loss() {
     double p = 0., slack;
     for(int i=0; i<n_train_comps; ++i) {
@@ -282,7 +298,7 @@ void Problem::run_altsvm(double l, init_option_t option) {
 
   lambda = l;
 
-  int n_max_updates = n_train_comps*10/n_threads;
+  int n_max_updates = n_train_comps/n_threads;
 
   double *alphaV = new double[this->n_train_comps];
   double *alphaU = new double[this->n_train_comps];
@@ -293,19 +309,21 @@ void Problem::run_altsvm(double l, init_option_t option) {
   memset(slack,  0, sizeof(double) * this->n_train_comps);
     
   // Alternating RankSVM
-  for(int i=0; i<n_users*rank; ++i) U[i] = 1.;
-  memset(V, 0, sizeof(double) * n_items * rank);
-    
-  //initialize(INIT_RANDOM);
-  //printf("Initial test error : %f \n", this->compute_testerror());
+  //for(int i=0; i<n_users*rank; ++i) U[i] = 1.;
+  //memset(V, 0, sizeof(double) * n_items * rank);
 
-  double start = omp_get_wtime(), error, ndcg;
+  double start = omp_get_wtime();
+
+  initialize(option);
+  printf("0, %f, %f, %f, %f, %f, %f \n", compute_Unormsq(), compute_Vnormsq(), compute_loss(), compute_testerror(), compute_ndcg(), omp_get_wtime() - start);
+  
+  double error, ndcg, normsq;
   for (int OuterIter = 0; OuterIter < 5; ++OuterIter) {
       
     ///////////////////////////
     // Learning V 
     ///////////////////////////
-      
+     
     // initialize using the previous alphaV
     memset(V, 0, sizeof(double) * n_items * rank);
     #pragma omp parallel for
@@ -322,15 +340,16 @@ void Problem::run_altsvm(double l, init_option_t option) {
       }
     }		
 
+/*
     // compute primal objective
-    double normsq = 0.;
+    normsq = 0.;
     #pragma omp parallel for reduction(+:normsq)
     for(int i=0; i<n_items*rank; ++i) { 
       double d = V[i]*V[i];
       normsq += d;
     }
-    printf("primal f : %f -> ", .5*normsq + compute_loss());
-
+    //printf("primal : %f,%f -> ", normsq, compute_loss());
+*/
 /*
     // normalize V
     if (normsq > 1e-4) {
@@ -379,20 +398,13 @@ void Problem::run_altsvm(double l, init_option_t option) {
       }
     }
 
-    // compute primal objective
-    normsq = 0.;
-    #pragma omp parallel for reduction(+:normsq)
-    for(int i=0; i<n_items*rank; ++i) { 
-      double d = V[i]*V[i];
-      normsq += d;
-    }
-    printf("%f \n", .5*normsq + compute_loss());
-
-    // compute error and ndcg
-    error = compute_testerror();
-    ndcg  = compute_ndcg();
-    printf("%d, %f, %f, %f \n", OuterIter, error, ndcg, omp_get_wtime() - start);
-
+    // compute performance measure
+    printf("%d, %f, %f, %f, %f, %f, %f \n", OuterIter, 
+                                            compute_Unormsq(),
+                                            compute_Vnormsq(),
+                                            compute_loss(),
+                                            compute_testerror(),
+                                            compute_ndcg(), omp_get_wtime() - start);
 
     ///////////////////////////
     // Learning U 
@@ -411,6 +423,7 @@ void Problem::run_altsvm(double l, init_option_t option) {
         }
       }
     }
+
 /*
       // normalize U
     #pragma omp parallel for
@@ -461,12 +474,16 @@ void Problem::run_altsvm(double l, init_option_t option) {
       }
 		}
 
-    // compute error and ndcg
-    error = this->compute_testerror();
-    ndcg  = this->compute_ndcg();
- 	  printf("%d, %f, %f, %f \n", OuterIter, error, ndcg, omp_get_wtime() - start);
+    // compute performance measure 
+    printf("%d, %f, %f, %f, %f, %f, %f \n", OuterIter, 
+                                            compute_Unormsq(),
+                                            compute_Vnormsq(),
+                                            compute_loss(),
+                                            compute_testerror(),
+                                            compute_ndcg(), omp_get_wtime() - start);
 
-    if (OuterIter < 5) n_max_updates *= 2;	
+
+    n_max_updates *= 2;	
   }
 
   delete [] slack;
@@ -612,18 +629,15 @@ void Problem::initialize(init_option_t option) {
 
 void Problem::run_sgd_random(double l, double a, double b, init_option_t option) {
 
+  double ndcg, error;
+
   printf("Random SGD with %d threads..\n", n_threads);
 
-  printf("Initialize..\n");
+  double time = omp_get_wtime();
   this->initialize(option); 
 
-  printf("Initial error : ");
-  double ndcg = this->compute_ndcg();
-  double error = this->compute_testerror();
-  printf("%f, %f \n", error, ndcg);
- 
-  printf("Running SGD..\n");
-
+  printf("0, %f, %f, %f, %f, %f, %f \n", compute_Unormsq(), compute_Vnormsq(), compute_loss(), compute_testerror(), compute_ndcg(), omp_get_wtime() - time);
+  
   lambda = l;
   alpha  = a;
   beta   = b;
@@ -632,7 +646,6 @@ void Problem::run_sgd_random(double l, double a, double b, init_option_t option)
 
   std::vector<int> c(n_train_comps,0);
 
-  double time = omp_get_wtime();
   for(int icycle=0; icycle<20; ++icycle) {
     #pragma omp parallel
     {
@@ -670,10 +683,12 @@ void Problem::run_sgd_random(double l, double a, double b, init_option_t option)
       for(int i=0; i<n_items*rank; ++i) V[i] /= p;
     }
 */
-    double ndcg = this->compute_ndcg();
-    double error = this->compute_testerror();
-    if (error < 0.) break; 
-    printf("%d, %f, %f, %f \n", (icycle+1)*n_max_updates, error, ndcg, omp_get_wtime() - time);
+    printf("%d, %f, %f, %f, %f, %f, %f\n", (icycle+1)*n_max_updates, 
+                                    compute_Unormsq(),
+                                    compute_Vnormsq(),
+                                    compute_loss(),
+                                    compute_testerror(),
+                                    compute_ndcg(), omp_get_wtime() - time);
   
     if (icycle < 5) n_max_updates *= 4;
   } 
@@ -910,6 +925,9 @@ double Problem::compute_ndcg() {
   return ndcg_sum / (double)n_users;
 }
 
+void Problem::evaluate(string lsvm) {
+}
+
 double Problem::compute_testerror() {
 	int n_error = 0; 
 
@@ -984,26 +1002,31 @@ int main (int argc, char* argv[]) {
   double time;
  
   time = omp_get_wtime(); 
-  printf("Running AltSVM.. \n");  
-	p.run_altsvm(1., INIT_RANDOM);
+  printf("Running AltSVM with random init.. \n");  
+	p.run_altsvm(10., INIT_RANDOM);
+	printf("%d threads, rankSVM takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
+
+  time = omp_get_wtime(); 
+  printf("Running AltSVM with SVD init.. \n");  
+	p.run_altsvm(10., INIT_SVD);
 	printf("%d threads, rankSVM takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
 
   time = omp_get_wtime();
   printf("Running Random SGD with random init.. \n");
-  p.run_sgd_random(100., 1e-1, 1e-5, INIT_RANDOM);
+  p.run_sgd_random(10., 1e-1, 1e-5, INIT_RANDOM);
+  printf("%d threads, randSGD takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
+
+  time = omp_get_wtime();
+  printf("Running Random SGD with SVD init.. \n");
+  p.run_sgd_random(10., 1e-1, 1e-5, INIT_SVD);
+  printf("%d threads, randSGD takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
+
+  time = omp_get_wtime();
+  printf("Running Random SGD with SVD init.. \n");
+  p.run_sgd_random(10., 1e-2, 1e-5, INIT_SVD);
   printf("%d threads, randSGD takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
 
 /*
-  time = omp_get_wtime();
-  printf("Running Random SGD with SVD init.. \n");
-  p.run_sgd_random(100., 1e-1, 1e-5, INIT_SVD);
-  printf("%d threads, randSGD takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
-
-  time = omp_get_wtime();
-  printf("Running Random SGD with SVD init.. \n");
-  p.run_sgd_random(100., 1e-2, 1e-5, INIT_SVD);
-  printf("%d threads, randSGD takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
-
   time = omp_get_wtime();
   printf("Running NOMADi SGD.. \n");
   p.run_sgd_nomad_item(100., 1e-1, 1e-5, INIT_RANDOM);
@@ -1014,5 +1037,8 @@ int main (int argc, char* argv[]) {
   p.run_sgd_nomad_user(100., 1e-1, 1e-5, INIT_RANDOM);
   printf("%d threads, nomadSGDu takes %f seconds, error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
 */
+
+  p.evaluate("CofiRank-0.1/out/F.lsvm");
+
   return 0;
 }

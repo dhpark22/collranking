@@ -10,12 +10,8 @@
 #SBATCH --mail-type=begin
 #SBATCH --mail-type=end
 
-./error.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 1 
-./speed.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 1 
+./a.out $WORK/collrank_data/ml10m_c10_test_rating_lsvm.dat $WORK/collrank_data/ml10m_c10_train_comps.dat $WORK/collrank_data/ml10m_c10_test_comps.dat 1
 
-./error.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 4 
-./speed.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 4 
-
-./error.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 16 
-./speed.out $SCRATCH/collrank_data/nf_train500.txt $SCRATCH/collrank_data/nf_test500.txt 16
+./a.out $WORK/collrank_data/ml10m/ml10m_c50_test_rating_lsvm.dat $WORK/collrank_data/ml10m/ml10m_c50_train_comps.dat $WORK/collrank_data/ml10m/ml10m_c50_test_comps.dat 1
+ 
 
