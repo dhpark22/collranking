@@ -77,6 +77,7 @@ bool comp_itemwise(comparison a, comparison b) { return ((a.item1_id < b.item1_i
 bool comp_ratingwise(rating a, rating b) { return (a.score > b.score); }
 bool rate_userwise(rating a, rating b) { return ((a.user_id < b.user_id) || ((a.user_id == b.user_id) && (a.item_id < b.item_id))); }
 bool ratef_userwise(ratingf a, ratingf b) { return ((a.user_id < b.user_id) || ((a.user_id == b.user_id) && (a.item_id < b.item_id))); }
+bool ratef_ratingwise(ratingf a, ratingf b) { return (a.score > b.score); }
 
 typedef struct rating rating;
 typedef struct ratingf ratingf;

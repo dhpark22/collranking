@@ -27,7 +27,7 @@
 
 using namespace std;
 
-enum init_option_t {INIT_RANDOM, INIT_SVD};
+enum init_option_t {INIT_RANDOM, INIT_SVD, INIT_ALLONES};
 
 class Problem {
   protected:
@@ -309,9 +309,6 @@ void Problem::run_altsvm(double l, init_option_t option) {
   memset(slack,  0, sizeof(double) * this->n_train_comps);
     
   // Alternating RankSVM
-  //for(int i=0; i<n_users*rank; ++i) U[i] = 1.;
-  //memset(V, 0, sizeof(double) * n_items * rank);
-
   double start = omp_get_wtime();
 
   initialize(option);
@@ -530,6 +527,12 @@ bool Problem::sgd_step(const comparison& comp, const bool first_item_only, const
 void Problem::initialize(init_option_t option) {
 
   switch(option) {
+    case INIT_ALLONES:
+
+    for(int i=0; i<n_users*rank; i++) U[i] = 1./sqrt((double)rank);
+    memset(V, 0, sizeof(double) * n_items * rank);
+    break;
+
     case INIT_RANDOM:
    
     srand(time(NULL)); 
@@ -544,8 +547,8 @@ void Problem::initialize(init_option_t option) {
 
     int user_idx, item_idx;
  
-    for(int iter=0; iter<10; ++iter) {
-      printf("%d \n", iter);
+    for(int iter=0; iter<100; ++iter) {
+      //printf("%d \n", iter);
 
       // normalize U (Gram-Schmidt)
       for(int k=0; k<rank; ++k) {
@@ -925,9 +928,6 @@ double Problem::compute_ndcg() {
   return ndcg_sum / (double)n_users;
 }
 
-void Problem::evaluate(string lsvm) {
-}
-
 double Problem::compute_testerror() {
 	int n_error = 0; 
 
@@ -991,7 +991,7 @@ int main (int argc, char* argv[]) {
 
 	int n_threads = atoi(argv[4]);
 
-	Problem p(100, n_threads);		// rank = 10
+	Problem p(10, n_threads);		// rank = 10
 
   printf("Reading data files..\n");
 
@@ -1003,30 +1003,35 @@ int main (int argc, char* argv[]) {
  
   time = omp_get_wtime(); 
   printf("Running AltSVM with random init.. \n");  
-	p.run_altsvm(10., INIT_RANDOM);
+	p.run_altsvm(1000., INIT_RANDOM);
 	printf("%d threads, rankSVM takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
 
   time = omp_get_wtime(); 
-  printf("Running AltSVM with SVD init.. \n");  
-	p.run_altsvm(10., INIT_SVD);
+  printf("Running AltSVM with all ones init.. \n");  
+	p.run_altsvm(1000., INIT_ALLONES);
+	printf("%d threads, rankSVM takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
+
+  time = omp_get_wtime(); 
+  printf("Running AltSVM with svd init.. \n");  
+	p.run_altsvm(1000., INIT_SVD);
 	printf("%d threads, rankSVM takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
 
   time = omp_get_wtime();
   printf("Running Random SGD with random init.. \n");
-  p.run_sgd_random(10., 1e-1, 1e-5, INIT_RANDOM);
+  p.run_sgd_random(1000., 1e-1, 1e-5, INIT_RANDOM);
   printf("%d threads, randSGD takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
 
   time = omp_get_wtime();
   printf("Running Random SGD with SVD init.. \n");
-  p.run_sgd_random(10., 1e-1, 1e-5, INIT_SVD);
+  p.run_sgd_random(1000., 1e-1, 1e-5, INIT_SVD);
   printf("%d threads, randSGD takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
-
-  time = omp_get_wtime();
-  printf("Running Random SGD with SVD init.. \n");
-  p.run_sgd_random(10., 1e-2, 1e-5, INIT_SVD);
-  printf("%d threads, randSGD takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
-
 /*
+  time = omp_get_wtime();
+  printf("Running Random SGD with SVD init.. \n");
+  p.run_sgd_random(1000., 1e-2, 1e-5, INIT_SVD);
+  printf("%d threads, randSGD takes %f seconds until error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
+
+
   time = omp_get_wtime();
   printf("Running NOMADi SGD.. \n");
   p.run_sgd_nomad_item(100., 1e-1, 1e-5, INIT_RANDOM);
@@ -1037,8 +1042,6 @@ int main (int argc, char* argv[]) {
   p.run_sgd_nomad_user(100., 1e-1, 1e-5, INIT_RANDOM);
   printf("%d threads, nomadSGDu takes %f seconds, error %f \n", n_threads, omp_get_wtime() - time, p.compute_testerror());
 */
-
-  p.evaluate("CofiRank-0.1/out/F.lsvm");
 
   return 0;
 }

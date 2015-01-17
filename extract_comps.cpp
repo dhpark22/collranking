@@ -111,20 +111,10 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
 
 		if (n_ratings_current_user >= n_train + n_test) {
 
-      /*
-      int sum_score = 0;
-      for(int j=0; j<ratings.size(); ++j) sum_score += ratings[j].score; 
-      if (sum_score == 0) {
-        printf("user %d \n", ratings[0].user_id);
-        for(int j=0; j<ratings.size(); ++j) printf("%d:%d ", ratings[j].item_id, ratings[j].score);
-        printf("%\n");
-      }
-      */
-
       // permute the ratings
 			for(int j=0; j<n_train; j++) {
 				int idx = RandIDX(j, n_ratings_current_user);
-				ratings[j].swap(ratings[idx]);
+        ratings[j].swap(ratings[idx]);
 			}
 
       // Take all possible comparisons for the first (n_train) ratings
@@ -140,12 +130,14 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
 			}
 
       // Write ratings for competitors
+      sort(ratings.begin(), ratings.begin()+n_train, rate_userwise);
       for(int j=0; j<n_train; ++j) {
         train_rating_lsvm << ratings[j].item_id << ':' << ratings[j].score << ' ';
         train_ratings.push_back(rating(new_user_id, ratings[j].item_id, ratings[j].score));
       }
       train_rating_lsvm << endl;
 
+      sort(ratings.begin()+n_train, ratings.end(), rate_userwise);
       for(int j=n_train; j<ratings.size(); ++j) {
         test_rating_lsvm  << ratings[j].item_id << ':' << ratings[j].score << ' ';
         test_rating_prea  << new_user_id << ' ' << ratings[j].item_id << ' ' << ratings[j].score << endl; 
@@ -153,7 +145,7 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
       }
       test_rating_lsvm  << endl;
 
-      // Take test comparisons for the rest of the ratings
+/*
 		  vector<comparison> comp_list(0);
 			for(int j1=n_train; j1<ratings.size(); j1++) {
 				for(int j2=j1+1; j2<ratings.size(); j2++) {
@@ -164,15 +156,14 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
 				}
 			}
 
-      int test_size = 100;
-      if (comp_list.size() < 100) test_size = comp_list.size();
-			for(int j=0; j<test_size; j++) {
-				int idx = RandIDX(j, comp_list.size());
+			for(int j=0; j<comp_list.size(); j++) {
+				//int idx = RandIDX(j, comp_list.size());
+        int idx = j;
         test_file  << new_user_id << ' ' << ratings[comp_list[idx].item1_id].item_id <<
                                      ' ' << ratings[comp_list[idx].item2_id].item_id << endl;
-				comp_list[j].swap(comp_list[idx]);
+				//comp_list[j].swap(comp_list[idx]);
 			}
-
+*/
 			return true;
 		}
 		else
@@ -197,9 +188,9 @@ bool CompExtractor::Extract(char *input_filename, char *output_filename) {
   train_file.open(output_header + "_train_comps.dat");
   test_file.open (output_header + "_test_comps.dat");
 
-  train_rating_lsvm.open(output_header + "_train_rating_lsvm.dat");
+  train_rating_lsvm.open(output_header + "_train_rating.lsvm");
   train_rating_prea.open(output_header + "_train_rating_prea.arff");
-  test_rating_lsvm.open (output_header + "_test_rating_lsvm.dat");
+  test_rating_lsvm.open (output_header + "_test_rating.lsvm");
   test_rating_prea.open (output_header + "_test_rating_prea.dat");
 
   if (SAMPLE_BY_COMPARISONS) printf("Sampling %d comps for each user\n", n_train); else printf("Sampling %d ratings for each user\n", n_train);
@@ -220,7 +211,7 @@ bool CompExtractor::Extract(char *input_filename, char *output_filename) {
       }
       else printf(" dropped\n");
 			ratings.clear();
-			current_user_id = user_id;
+      current_user_id = user_id;
 		}
 		
 		ratings.push_back(rating(user_id, item_id, score));
