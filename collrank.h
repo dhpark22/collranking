@@ -98,7 +98,6 @@ typedef struct rating rating;
 typedef struct ratingf ratingf;
 typedef struct comparison comparison;
 
-template <typename T>
 class RatingMatrix {
   public:
     int             n_users, n_items;
@@ -109,6 +108,7 @@ class RatingMatrix {
     bool            is_dcg_max_computed = false;
     vector<double>  dcg_max;
     void compute_dcgmax(int);
+    double compute_user_ndcg(int, const vector<double>&);
 
     RatingMatrix() : n_users(0), n_items(0) {}
     RatingMatrix(int nu, int ni): n_users(nu), n_items(ni) {}
@@ -135,12 +135,18 @@ class Model {
     double compute_testerror(const vector<comparison>&);
 };
 
-std::pair<double,double> compute_pairwiseError(const RatingMatrix<double>& TestRating, const RatingMatrix<double>& PredictedRating) {
+std::ifstream::pos_type filesize(const char* filename)
+{
+    std::ifstream in(filename, std::ios::binary | std::ios::ate);
+    return in.tellg(); 
+}
+
+std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, const RatingMatrix& PredictedRating) {
 
   std::pair<double,double> comp_error;
   std::vector<double> score(TestRating.n_items);
   
-  int error = 0, n_comps = 0, errorT = 0, n_compsT = 0;
+  unsigned long long error = 0, n_comps = 0, errorT = 0, n_compsT = 0;
   for(int uid=0; uid<TestRating.n_users; ++uid) {
     score.resize(TestRating.n_items,-1e10);    
     double max_sc = -1.;
@@ -183,17 +189,15 @@ std::pair<double,double> compute_pairwiseError(const RatingMatrix<double>& TestR
   comp_error.first  = (double)error / (double)n_comps;
   comp_error.second = (double)errorT / (double)n_compsT; 
 
-  printf("%d %d %d %d \n", error, n_comps, errorT, n_compsT);
-
   return comp_error;
 }
 
-std::pair<double,double> compute_pairwiseError(const RatingMatrix<double>& TestRating, const Model& PredictedModel) {
+std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, const Model& PredictedModel) {
 
   std::pair<double,double> comp_error;
   std::vector<double> score(TestRating.n_items);
   
-  int error = 0, n_comps = 0, errorT = 0, n_compsT = 0;
+  unsigned long long error = 0, n_comps = 0, errorT = 0, n_compsT = 0;
   for(int uid=0; uid<TestRating.n_users; ++uid) {
     score.resize(TestRating.n_items,-1e10);    
     double max_sc = -1.;
@@ -239,89 +243,137 @@ std::pair<double,double> compute_pairwiseError(const RatingMatrix<double>& TestR
   return comp_error;
 }
 
-double compute_ndcg(const RatingMatrix<double>& TestRating, const RatingMatrix<double>& PredictedRating) {
+double RatingMatrix::compute_user_ndcg(int uid, const vector<double>& score) {
+  vector<pair<double,int> > ranking;
+  for(int j=0; j<score.size(); ++j) ranking.push_back(pair<double,int>(score[j],0));
+
+  double min_score = ranking[0].first;
+  for(int j=0; j<ranking.size(); ++j) min_score = min(min_score, ranking[j].first);
+
+  double dcg = 0.;
+  for(int k=1; k<=ndcg_k; ++k) {
+    int topk_idx = -1;
+    double max_score = min_score - 1.;
+    for(int j=0; j<ranking.size(); ++j) {
+      if ((ranking[j].second == 0) && (ranking[j].first > max_score)) {
+        max_score = ranking[j].first;
+        topk_idx = j;
+      }
+    }
+    ranking[topk_idx].second = k;
+     
+    dcg += (double)(pow(2,ratings[idx[uid]+topk_idx].score) - 1) / log2((double)(k+1));
+  }
+
+  return dcg / dcg_max[uid];
+} 
+
+double compute_ndcg(RatingMatrix& TestRating, const string& Predict_filename) {
+
+  double ndcg_sum;
+ 
+  vector<double> score;
+  string user_str, attribute_str;
+  stringstream attribute_sstr;  
+
+  ifstream f;
+ 
+  f.open(Predict_filename);
+  if (f.is_open()) {
+     
+    for(int uid=0; uid<TestRating.n_users; ++uid) { 
+      getline(f, user_str);
+
+      size_t pos1 = 0, pos2;
+     
+      score.clear();
+      for(int idx=TestRating.idx[uid]; idx<TestRating.idx[uid+1]; ++idx) {
+        int iid = -1;
+        double sc;
+
+        while(iid < TestRating.ratings[idx].item_id) {
+          pos2 = user_str.find(':', pos1); if (pos2 == string::npos) break; 
+          attribute_str = user_str.substr(pos1, pos2-pos1);
+          attribute_sstr.clear(); attribute_sstr.str(attribute_str);
+          attribute_sstr >> iid;
+          --iid;
+          pos1 = pos2+1;
+
+          pos2 = user_str.find(' ', pos1); attribute_str = user_str.substr(pos1, pos2-pos1);
+          attribute_sstr.clear(); attribute_sstr.str(attribute_str);
+          attribute_sstr >> sc;
+          pos1 = pos2+1;
+        }
+      
+        if (iid == TestRating.ratings[idx].item_id)
+          score.push_back(sc);
+        else
+          score.push_back(-1e10);
+
+      }         
+ 
+      ndcg_sum += TestRating.compute_user_ndcg(uid, score);
+    } 
+
+  } else {
+      printf("Error in opening the extracted rating file!\n");
+      cout << Predict_filename << endl;
+      exit(EXIT_FAILURE);
+  }
+  
+  f.close();
+}
+
+double compute_ndcg(RatingMatrix& TestRating, const RatingMatrix& PredictedRating) {
 
   double ndcg_sum = 0.;
-  vector<pair<double,int> > ranking;
+  vector<double> score; 
  
   for(int uid=0; uid<TestRating.n_users; ++uid) {
     double dcg = 0.;
  
-    ranking.clear();
+    score.clear();
     int j = PredictedRating.idx[uid];
     for(int i=TestRating.idx[uid]; i<TestRating.idx[uid+1]; ++i) {
       double prod = 0.;
       while((j < PredictedRating.idx[uid+1]) && (PredictedRating.ratings[j].item_id < TestRating.ratings[i].item_id)) ++j;
       if ((PredictedRating.ratings[j].user_id == TestRating.ratings[i].user_id) && (PredictedRating.ratings[j].item_id == TestRating.ratings[i].item_id))
-        ranking.push_back(pair<double,int>(PredictedRating.ratings[j].score,0));
+        score.push_back(PredictedRating.ratings[j].score);
       else
-        ranking.push_back(pair<double,int>(-1e10,0));
+        score.push_back(-1e10);
     }
-
-    double min_score = ranking[0].first;
-    for(int j=0; j<ranking.size(); ++j) min_score = min(min_score, ranking[j].first);
-
-    for(int k=1; k<=TestRating.ndcg_k; ++k) {
-      int topk_idx = -1;
-      double max_score = min_score - 1.;
-      for(int j=0; j<ranking.size(); ++j) {
-        if ((ranking[j].second == 0) && (ranking[j].first > max_score)) {
-          max_score = ranking[j].first;
-          topk_idx = j;
-        }
-      }
-      ranking[topk_idx].second = k;
-     
-      dcg += (double)(pow(2,TestRating.ratings[TestRating.idx[uid]+topk_idx].score) - 1) / log2((double)(k+1));
-    }
-   
-    ndcg_sum += dcg / TestRating.dcg_max[uid];
+  
+    ndcg_sum += TestRating.compute_user_ndcg(uid, score);
   }
 
   return ndcg_sum / (double)PredictedRating.n_users;
 }
 
-double compute_ndcg(const RatingMatrix<double>& TestRating, const Model& PredictedModel) {
+double compute_ndcg(RatingMatrix& TestRating, const Model& PredictedModel) {
   
   double ndcg_sum = 0.;
-  vector<pair<double,int> > ranking;
+  vector<double> score;
  
   for(int uid=0; uid<PredictedModel.n_users; ++uid) {
     double dcg = 0.;
   
-    ranking.clear();
+    score.clear();
     for(int i=TestRating.idx[uid]; i<TestRating.idx[uid+1]; ++i) {
       int iid = TestRating.ratings[i].item_id;
       double prod = 0.;
       for(int k=0; k<PredictedModel.rank; ++k) prod += PredictedModel.U[uid * PredictedModel.rank + k] * PredictedModel.V[iid * PredictedModel.rank + k];
-      ranking.push_back(pair<double,int>(prod,0));
+      score.push_back(prod);
     }
-
-    double min_score = ranking[0].first;
-    for(int j=0; j<ranking.size(); ++j) min_score = min(min_score, ranking[j].first);
-
-    for(int k=1; k<=TestRating.ndcg_k; ++k) {
-      int topk_idx = -1;
-      double max_score = min_score - 1.;
-      for(int j=0; j<ranking.size(); ++j) {
-        if ((ranking[j].second == 0) && (ranking[j].first > max_score)) {
-          max_score = ranking[j].first;
-          topk_idx = j;
-        }
-      }
-      ranking[topk_idx].second = k;
-     
-      dcg += (double)(pow(2,TestRating.ratings[TestRating.idx[uid]+topk_idx].score) - 1) / log2((double)(k+1));
-    }
-   
-   ndcg_sum += dcg / TestRating.dcg_max[uid];
+    
+    ndcg_sum += TestRating.compute_user_ndcg(uid, score);
 	}
 
   return ndcg_sum / (double)PredictedModel.n_users;
 }
 
-template <typename T>
-void RatingMatrix<T>::read_lsvm(const string& filename) {
+void RatingMatrix::read_lsvm(const string& filename) {
+  
+  cout << "Reading " << filename << ".." << endl;
 
   ratings.clear();
   idx.clear();
@@ -380,14 +432,14 @@ void RatingMatrix<T>::read_lsvm(const string& filename) {
 
   } else {
       printf("Error in opening the extracted rating file!\n");
+      cout << filename << endl;
       exit(EXIT_FAILURE);
   }
   
   f.close();
 }
 
-template <typename T>
-void RatingMatrix<T>::compute_dcgmax(int ndcgK) {
+void RatingMatrix::compute_dcgmax(int ndcgK) {
 
   ndcg_k = ndcgK;
 
@@ -405,8 +457,7 @@ void RatingMatrix<T>::compute_dcgmax(int ndcgK) {
   } 
 }
 
-template <typename T>
-void RatingMatrix<T>::read_spformat(const string& filename) {
+void RatingMatrix::read_spformat(const string& filename) {
   // read sparse matrix format
 }
 

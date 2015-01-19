@@ -4,14 +4,15 @@
 #SBATCH -e dohyung_project.o%j
 #SBATCH -p serial
 #SBATCH -N 1
-#SBATCH -n 16
-#SBATCH -t 06:00:00
+#SBATCH -n 1 
+#SBATCH -t 12:00:00
 #SBATCH --mail-user=dhpark@utexas.edu
 #SBATCH --mail-type=begin
 #SBATCH --mail-type=end
 
-./a.out $WORK/collrank_data/ml10m_c10_test_rating_lsvm.dat $WORK/collrank_data/ml10m_c10_train_comps.dat $WORK/collrank_data/ml10m_c10_test_comps.dat 1
+./a.out $WORK/collrank_data/ml10m/ml10m_u20_train_comps.dat $WORK/collrank_data/ml10m/ml10m_u20_test_rating.lsvm 10 1
+./a.out $WORK/collrank_data/ml10m/ml10m_u50_train_comps.dat $WORK/collrank_data/ml10m/ml10m_u50_test_rating.lsvm 10 1
 
-./a.out $WORK/collrank_data/ml10m/ml10m_c50_test_rating_lsvm.dat $WORK/collrank_data/ml10m/ml10m_c50_train_comps.dat $WORK/collrank_data/ml10m/ml10m_c50_test_comps.dat 1
- 
+./a.out $WORK/collrank_data/netflix/nf_u20_train_comps.dat $WORK/collrank_data/netflix/nf_u20_test_rating.lsvm 10 1
+./a.out $WORK/collrank_data/netflix/nf_u50_train_comps.dat $WORK/collrank_data/netflix/nf_u50_test_rating.lsvm 10 1
 
