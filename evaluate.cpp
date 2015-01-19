@@ -2,9 +2,7 @@
 #include <vector>
 #include <utility>
 #include <string>
-#include "collrank.h"
-
-using namespace std;
+#include "collrank.hpp"
 
 int main (int argc, char* argv[]) {
 
