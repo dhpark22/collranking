@@ -19,7 +19,7 @@
 #include "elements.hpp"
 #include "model.hpp"
 #include "ratings.hpp"
-#include "collrank.hpp"
+#include "eval.hpp"
 
 using namespace std;
 
@@ -221,6 +221,7 @@ void Problem::run_altsvm(double l, init_option_t option) {
   printf("0, %f, %f, %f, %f, %f, %f, %f\n", model.Unormsq(), model.Vnormsq(), compute_loss(), error.first, error.second, ndcg, omp_get_wtime() - start);
 
   double normsq;
+  double f, f_old;
   for (int OuterIter = 0; OuterIter < 5; ++OuterIter) {
       
     ///////////////////////////
@@ -242,29 +243,6 @@ void Problem::run_altsvm(double l, init_option_t option) {
         }
       }
     }		
-
-/*
-    // compute primal objective
-    normsq = 0.;
-    #pragma omp parallel for reduction(+:normsq)
-    for(int i=0; i<n_items*rank; ++i) { 
-      double d = V[i]*V[i];
-      normsq += d;
-    }
-    //printf("primal : %f,%f -> ", normsq, compute_loss());
-*/
-/*
-    // normalize V
-    if (normsq > 1e-4) {
-      double norm = sqrt(normsq);
-
-      #pragma omp parallel for
-      for(int i=0; i<n_items*rank; ++i) V[i] /= norm;
-
-      #pragma omp parallel for
-      for(int i=0; i<n_train_comps; ++i) alphaV[i] /= norm;
-    }
-*/
 
     // DUAL COORDINATE DESCENT for V
     #pragma omp parallel
@@ -298,6 +276,10 @@ void Problem::run_altsvm(double l, init_option_t option) {
             item2_vec[j] -= d;
           }
         }
+
+//        f = compute_loss() + .5*lambda*model.Vnormsq();
+//        if (f - f_old < 1e-5) break;
+//        f_old = f;
       }
     }
 

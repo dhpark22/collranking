@@ -7,8 +7,8 @@
 // [1b] solve the problem with stochasitic gradient descent in hogwild style
 // [1c] solve the problem with stochastic gradient descent in nomad style
 //
-// Run: ./a.out [rating_file] [rating_format] [num_partitions]
-
+// Run: ./collrank [training (comparison) file] [test (rating) file] [rank] [num_threads]
+	
 #include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,7 +17,7 @@
 int main (int argc, char* argv[]) {
 	if (argc < 5) {
 		cout << "Solve collaborative ranking problem with given training/testing data set" << endl;
-		cout << "Usage ./collaborative_ranking [rating file] [training file] [testing file] [num_threads]" << endl;
+		cout << "Usage ./collrank [training (comparison) file] [test (rating) file] [rank] [num_threads]" << endl;
 		return 0;
 	}
 
@@ -40,11 +40,11 @@ int main (int argc, char* argv[]) {
 
   time = omp_get_wtime(); 
   printf("Running AltSVM with all ones init.. \n");  
-	p.run_altsvm(1000., INIT_ALLONES);
+	p.run_altsvm(2000., INIT_RANDOM);
 
   time = omp_get_wtime(); 
   printf("Running AltSVM with svd init.. \n");  
-	p.run_altsvm(1000., INIT_SVD);
+	p.run_altsvm(3000., INIT_RANDOM);
 /*
   time = omp_get_wtime();
   printf("Running Random SGD with random init.. \n");
@@ -53,10 +53,6 @@ int main (int argc, char* argv[]) {
   time = omp_get_wtime();
   printf("Running Random SGD with SVD init.. \n");
   p.run_sgd_random(1000., 1e-1, 1e-5, INIT_SVD);
-
-  time = omp_get_wtime();
-  printf("Running Random SGD with SVD init.. \n");
-  p.run_sgd_random(1000., 1e-2, 1e-5, INIT_SVD);
 
   time = omp_get_wtime();
   printf("Running NOMADi SGD.. \n");

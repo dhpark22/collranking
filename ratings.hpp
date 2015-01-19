@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include "elements.hpp"
+#include "model.hpp"
 
 class RatingMatrix {
   public:

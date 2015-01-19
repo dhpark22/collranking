@@ -2,7 +2,8 @@
 #include <vector>
 #include <utility>
 #include <string>
-#include "collrank.hpp"
+#include "ratings.hpp"
+#include "eval.hpp"
 
 int main (int argc, char* argv[]) {
 

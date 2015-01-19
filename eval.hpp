@@ -20,8 +20,6 @@
 #include "model.hpp"
 #include "ratings.hpp"
 
-using namespace std;
-
 std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, const RatingMatrix& PredictedRating) {
 
   std::pair<double,double> comp_error;
@@ -124,15 +122,15 @@ std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, c
   return comp_error;
 }
 
-double compute_ndcg(RatingMatrix& TestRating, const string& Predict_filename) {
+double compute_ndcg(RatingMatrix& TestRating, const std::string& Predict_filename) {
 
   double ndcg_sum;
  
-  vector<double> score;
-  string user_str, attribute_str;
-  stringstream attribute_sstr;  
+  std::vector<double> score;
+  std::string user_str, attribute_str;
+  std::stringstream attribute_sstr;  
 
-  ifstream f;
+  std::ifstream f;
  
   f.open(Predict_filename);
   if (f.is_open()) {
@@ -148,7 +146,7 @@ double compute_ndcg(RatingMatrix& TestRating, const string& Predict_filename) {
         double sc;
 
         while(iid < TestRating.ratings[idx].item_id) {
-          pos2 = user_str.find(':', pos1); if (pos2 == string::npos) break; 
+          pos2 = user_str.find(':', pos1); if (pos2 == std::string::npos) break; 
           attribute_str = user_str.substr(pos1, pos2-pos1);
           attribute_sstr.clear(); attribute_sstr.str(attribute_str);
           attribute_sstr >> iid;
@@ -173,7 +171,7 @@ double compute_ndcg(RatingMatrix& TestRating, const string& Predict_filename) {
 
   } else {
       printf("Error in opening the extracted rating file!\n");
-      cout << Predict_filename << endl;
+      std::cout << Predict_filename << std::endl;
       exit(EXIT_FAILURE);
   }
   
@@ -183,7 +181,7 @@ double compute_ndcg(RatingMatrix& TestRating, const string& Predict_filename) {
 double compute_ndcg(RatingMatrix& TestRating, const RatingMatrix& PredictedRating) {
 
   double ndcg_sum = 0.;
-  vector<double> score; 
+  std::vector<double> score; 
  
   for(int uid=0; uid<TestRating.n_users; ++uid) {
     double dcg = 0.;
@@ -208,7 +206,7 @@ double compute_ndcg(RatingMatrix& TestRating, const RatingMatrix& PredictedRatin
 double compute_ndcg(RatingMatrix& TestRating, const Model& PredictedModel) {
   
   double ndcg_sum = 0.;
-  vector<double> score;
+  std::vector<double> score;
  
   for(int uid=0; uid<PredictedModel.n_users; ++uid) {
     double dcg = 0.;
@@ -226,5 +224,7 @@ double compute_ndcg(RatingMatrix& TestRating, const Model& PredictedModel) {
 
   return ndcg_sum / (double)PredictedModel.n_users;
 }
+
+
 
 #endif
