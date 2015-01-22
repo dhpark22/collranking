@@ -185,7 +185,7 @@ double Problem::compute_loss() {
       d += user_vec[j] * (item1_vec[j] - item2_vec[j]);
     }
     slack = max(0., 1. - d);
-    p += slack*slack/lambda;
+    p += slack*slack;
   }
     
   return p;
@@ -201,6 +201,7 @@ void Problem::run_altsvm(double l, init_option_t option) {
 
   lambda = l;
 
+  int MaxIter = 100;
   int n_max_updates = n_train_comps/n_threads;
 
   double *alphaV = new double[this->n_train_comps];
@@ -213,16 +214,17 @@ void Problem::run_altsvm(double l, init_option_t option) {
     
   // Alternating RankSVM
   double start = omp_get_wtime();
+  double f, f_old = 1e20;
 
   initialize(option);
 
   std::pair<double,double> error = compute_pairwiseError(test, model);
   double ndcg  = compute_ndcg(test, model);
-  printf("0, %f, %f, %f, %f, %f, %f, %f\n", model.Unormsq(), model.Vnormsq(), compute_loss(), error.first, error.second, ndcg, omp_get_wtime() - start);
+  f = compute_loss() + .5*lambda*(model.Unormsq() + model.Vnormsq());
+  printf("0, %f, %f, %f, %f / %f, %f, %f / %f\n", f, model.Unormsq(), model.Vnormsq(), compute_loss(), error.first, error.second, ndcg, omp_get_wtime() - start);
 
   double normsq;
-  double f, f_old;
-  for (int OuterIter = 0; OuterIter < 5; ++OuterIter) {
+  for (int OuterIter = 1; OuterIter <= MaxIter; ++OuterIter) {
       
     ///////////////////////////
     // Learning V 
@@ -235,13 +237,13 @@ void Problem::run_altsvm(double l, init_option_t option) {
       double *user_vec  = &(model.U[train[i].user_id  * model.rank]);
       double *item1_vec = &(model.V[train[i].item1_id * model.rank]);
       double *item2_vec = &(model.V[train[i].item2_id * model.rank]);
-      if (alphaV[i] > 1e-10) {
+      //if (alphaV[i] > 1e-10) {
         for(int j=0; j<model.rank; ++j) {
           double d = alphaV[i] * user_vec[j];
           item1_vec[j] += d;
           item2_vec[j] -= d;
         }
-      }
+      //}
     }		
 
     // DUAL COORDINATE DESCENT for V
@@ -265,7 +267,7 @@ void Problem::run_altsvm(double l, init_option_t option) {
           p2 += user_vec[j] * user_vec[j];
         } 
 
-        double delta = (1. - p1 - alphaV[idx]/2.*lambda) / (p2*2. + .5*lambda);
+        double delta = (1. - p1 - alphaV[idx]*.5*lambda) / (p2*2. + .5*lambda);
         delta = max(0., delta + alphaV[idx]) - alphaV[idx];      
 
         if (delta != 0.) { 
@@ -276,17 +278,16 @@ void Problem::run_altsvm(double l, init_option_t option) {
             item2_vec[j] -= d;
           }
         }
-
-//        f = compute_loss() + .5*lambda*model.Vnormsq();
-//        if (f - f_old < 1e-5) break;
-//        f_old = f;
       }
+
     }
 
     // compute performance measure
     error = compute_pairwiseError(test, model);
     ndcg  = compute_ndcg(test, model);
-    printf("%d, %f, %f, %f, %f, %f, %f, %f\n", OuterIter, model.Unormsq(), model.Vnormsq(), compute_loss(), error.first, error.second, ndcg, omp_get_wtime() - start);
+    f = compute_loss() + .5*lambda*(model.Unormsq() + model.Vnormsq());
+    printf("%d, %f, %f, %f, %f / %f, %f, %f / %f\n", OuterIter, f, model.Unormsq(), model.Vnormsq(), compute_loss(), error.first, error.second, ndcg, omp_get_wtime() - start);
+
 
     ///////////////////////////
     // Learning U 
@@ -296,31 +297,15 @@ void Problem::run_altsvm(double l, init_option_t option) {
     memset(model.U, 0, sizeof(double) * n_users * model.rank);
     #pragma omp parallel for
     for(int i=0; i<n_train_comps; ++i) {
-      if (alphaU[i] > 1e-10) {
+      //if (alphaU[i] > 1e-10) {
         double *user_vec  = &(model.U[train[i].user_id  * model.rank]);
         double *item1_vec = &(model.V[train[i].item1_id * model.rank]);
         double *item2_vec = &(model.V[train[i].item2_id * model.rank]);
         for(int j=0; j<model.rank; ++j) {
           user_vec[j] += alphaU[i] * (item1_vec[j] - item2_vec[j]);  
         }
-      }
+      //}
     }
-
-/*
-      // normalize U
-    #pragma omp parallel for
-    for(int uid=0; uid<n_users; ++uid) {
-      double p = 0.;
-      int j = uid*rank, j_end = (uid+1)*rank; 
-      for(; j<j_end; ++j) p += U[j]*U[j]; 
-    
-      if (p > 1e-4) {  
-        p = sqrt(p);
-        for(j=uid*rank; j<j_end; ++j) U[j] /= p;    
-        for(j=tridx_user[uid*n_threads]; j<tridx_user[(uid+1)*n_threads]; ++j) alphaU[j] /= p;
-      }
-    }
-*/
 
     // DUAL COORDINATE DESCENT for U
     #pragma omp parallel
@@ -359,9 +344,14 @@ void Problem::run_altsvm(double l, init_option_t option) {
     // compute performance measure 
     error = compute_pairwiseError(test, model);
     ndcg  = compute_ndcg(test, model);
-    printf("%d, %f, %f, %f, %f, %f, %f, %f\n", OuterIter, model.Unormsq(), model.Vnormsq(), compute_loss(), error.first, error.second, ndcg, omp_get_wtime() - start);
+    f = compute_loss() + .5*lambda*(model.Unormsq() + model.Vnormsq());
+    printf("%d, %f, %f, %f, %f / %f, %f, %f / %f\n", OuterIter, f, model.Unormsq(), model.Vnormsq(), compute_loss(), error.first, error.second, ndcg, omp_get_wtime() - start);
 
-    n_max_updates *= 2;	
+    // stopping rule
+    if ((f_old - f) / f_old < 1e-5) break;
+    f_old = f;
+
+    //if (OuterIter < 5) n_max_updates *= 2;
   }
 
   delete [] slack;

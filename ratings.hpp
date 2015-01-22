@@ -25,7 +25,7 @@ class RatingMatrix {
     std::vector<double>   dcg_max;
     
     void compute_dcgmax(int);
-    double compute_user_ndcg(int, const std::vector<double>&);
+    double compute_user_ndcg(int, const std::vector<double>&) const;
 
     RatingMatrix() : n_users(0), n_items(0) {}
     RatingMatrix(int nu, int ni): n_users(nu), n_items(ni) {}
@@ -40,7 +40,7 @@ std::ifstream::pos_type filesize(const char* filename)
     return in.tellg(); 
 }
 
-double RatingMatrix::compute_user_ndcg(int uid, const std::vector<double>& score) {
+double RatingMatrix::compute_user_ndcg(int uid, const std::vector<double>& score) const {
   std::vector<std::pair<double,int> > ranking;
   for(int j=0; j<score.size(); ++j) ranking.push_back(std::pair<double,int>(score[j],0));
 
@@ -148,7 +148,9 @@ void RatingMatrix::compute_dcgmax(int ndcgK) {
     for(int k=0; k<ndcg_k; ++k) dcg_max[uid] += (double)(pow(2,ratings_current_user[k].score) - 1.) / log2(k+2); 
     
     ratings_current_user.clear();
-  } 
+  }
+
+  is_dcg_max_computed = true; 
 }
 
 void RatingMatrix::read_spformat(const std::string& filename) {

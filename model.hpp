@@ -15,6 +15,7 @@ class Model {
     void de_allocate();					            // deallocate U, V when they are used multiple times by different methods
 
     Model(int r): is_allocated(false), rank(r) {}
+    Model(int nu, int ni, int r): is_allocated(false), rank(r) { allocate(nu, ni); }
  
     double Unormsq();
     double Vnormsq();

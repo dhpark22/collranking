@@ -39,12 +39,9 @@ int main (int argc, char* argv[]) {
 	p.run_altsvm(1000., INIT_RANDOM);
 
   time = omp_get_wtime(); 
-  printf("Running AltSVM with all ones init.. \n");  
-	p.run_altsvm(2000., INIT_RANDOM);
-
-  time = omp_get_wtime(); 
   printf("Running AltSVM with svd init.. \n");  
-	p.run_altsvm(3000., INIT_RANDOM);
+	p.run_altsvm(1000., INIT_SVD);
+
 /*
   time = omp_get_wtime();
   printf("Running Random SGD with random init.. \n");

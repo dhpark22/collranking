@@ -75,7 +75,7 @@ std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, c
 
   std::pair<double,double> comp_error;
   std::vector<double> score(TestRating.n_items);
-  
+ 
   unsigned long long error = 0, n_comps = 0, errorT = 0, n_compsT = 0;
   for(int uid=0; uid<TestRating.n_users; ++uid) {
     score.resize(TestRating.n_items,-1e10);    
@@ -122,7 +122,7 @@ std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, c
   return comp_error;
 }
 
-double compute_ndcg(RatingMatrix& TestRating, const std::string& Predict_filename) {
+double compute_ndcg(const RatingMatrix& TestRating, const std::string& Predict_filename) {
 
   double ndcg_sum;
  
@@ -178,7 +178,7 @@ double compute_ndcg(RatingMatrix& TestRating, const std::string& Predict_filenam
   f.close();
 }
 
-double compute_ndcg(RatingMatrix& TestRating, const RatingMatrix& PredictedRating) {
+double compute_ndcg(const RatingMatrix& TestRating, const RatingMatrix& PredictedRating) {
 
   double ndcg_sum = 0.;
   std::vector<double> score; 
@@ -203,11 +203,13 @@ double compute_ndcg(RatingMatrix& TestRating, const RatingMatrix& PredictedRatin
   return ndcg_sum / (double)PredictedRating.n_users;
 }
 
-double compute_ndcg(RatingMatrix& TestRating, const Model& PredictedModel) {
-  
+double compute_ndcg(const RatingMatrix& TestRating, const Model& PredictedModel) {
+ 
+  if (!TestRating.is_dcg_max_computed) return -1.; 
+ 
   double ndcg_sum = 0.;
   std::vector<double> score;
- 
+
   for(int uid=0; uid<PredictedModel.n_users; ++uid) {
     double dcg = 0.;
   
