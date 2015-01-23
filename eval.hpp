@@ -20,6 +20,53 @@
 #include "model.hpp"
 #include "ratings.hpp"
 
+
+enum loss_option_t {LOGISTIC, L1_HINGE, L2_HINGE, SQUARED};
+
+double compute_loss(const Model& model, const std::vector<comparison>& TestComps, loss_option_t option) {
+  double p = 0., loss;
+  for(int i=0; i<TestComps.size(); ++i) {
+    double *user_vec  = &(model.U[TestComps[i].user_id  * model.rank]);
+    double *item1_vec = &(model.V[TestComps[i].item1_id * model.rank]);
+    double *item2_vec = &(model.V[TestComps[i].item2_id * model.rank]);
+    double d = 0.;
+    for(int j=0; j<model.rank; ++j) {
+      d += user_vec[j] * (item1_vec[j] - item2_vec[j]);
+    }
+    
+    switch(option) {
+      case SQUARED:
+        loss = .5*pow(1.-d, 2.);
+        break;
+      case LOGISTIC:
+        loss = log(1.+exp(-d));
+        break;
+      case L1_HINGE:
+        loss = std::max(0., 1.-d);
+        break;
+      case L2_HINGE:
+        loss = pow(std::max(0., 1.-d), 2.);
+    }
+
+    p += loss;
+  }
+     
+  return p;		
+}
+
+double compute_loss(const Model& model, const RatingMatrix& test) {
+  double p = 0.;
+  for(int i=0; i<test.ratings.size(); ++i) {
+    double *user_vec  = &(model.U[test.ratings[i].user_id * model.rank]);
+    double *item_vec  = &(model.V[test.ratings[i].item_id * model.rank]);
+    double d = 0.;
+    for(int j=0; j<model.rank; ++j) d += user_vec[j] * item_vec[j];
+    p += .5 * pow(test.ratings[i].score - d, 2.);
+  }
+     
+  return p;		
+}
+
 std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, const RatingMatrix& PredictedRating) {
 
   std::pair<double,double> comp_error;

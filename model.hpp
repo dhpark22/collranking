@@ -19,8 +19,6 @@ class Model {
  
     double Unormsq();
     double Vnormsq();
-    double compute_loss(const std::vector<comparison>&, double);
-    double compute_testerror(const std::vector<comparison>&);
 };
 
 double Model::Unormsq() {
@@ -33,38 +31,6 @@ double Model::Vnormsq() {
   double p = 0.;
   for(int i=0; i<n_items*rank; ++i) p += V[i]*V[i];
   return p;
-}
-
-double Model::compute_loss(const std::vector<comparison>& TestComps, double lambda) {
-  double p = 0., slack;
-  for(int i=0; i<TestComps.size(); ++i) {
-    double *user_vec  = &U[TestComps[i].user_id  * rank];
-    double *item1_vec = &V[TestComps[i].item1_id * rank];
-    double *item2_vec = &V[TestComps[i].item2_id * rank];
-    double d = 0.;
-    for(int j=0; j<rank; ++j) {
-      d += user_vec[j] * (item1_vec[j] - item2_vec[j]);
-    }
-    slack = std::max(0., 1. - d);
-    p += slack*slack/lambda;
-  }
-   
-  return p;		
-}
-
-double Model::compute_testerror(const std::vector<comparison>& TestComps) {
-	int n_error = 0; 
-	
-  for(int i=0; i<TestComps.size(); i++) {
-		double prod = 0.;
-		int user_idx  = TestComps[i].user_id;
-		int item1_idx = TestComps[i].item1_id;
-		int item2_idx = TestComps[i].item2_id;
-		for(int k=0; k<rank; k++) prod += U[user_idx*rank + k] * (V[item1_idx*rank + k] - V[item2_idx*rank + k]);
-		if (prod <= 0.) n_error += 1;
-  }
-
-  return (double)n_error / (double)(TestComps.size());
 }
 
 void Model::allocate(int nu, int ni) {

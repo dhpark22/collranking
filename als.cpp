@@ -63,9 +63,12 @@ void als(Model &model, const RatingMatrix &train, const RatingMatrix &test, int 
   double *Xsrc = new double[rank * n_max];
   double *ysrc = new double[n_max]; 
 
+  double f, f_old;
   std::pair<double,double> perror = compute_pairwiseError(test, model);
   double ndcg = compute_ndcg(test, model);
-  printf("0: %f %f %f\n", perror.first, perror.second, ndcg);
+  
+  f_old = compute_loss(model, train) + .5 * lambda * (model.Unormsq() + model.Vnormsq());
+  printf("  0: %f / %f %f %f\n", f_old, perror.first, perror.second, ndcg);
 
   int n;
   for(int iter=1; iter<=nIter; ++iter) {
@@ -110,8 +113,12 @@ void als(Model &model, const RatingMatrix &train, const RatingMatrix &test, int 
 
     std::pair<double,double> perror = compute_pairwiseError(test, model);
     double ndcg = compute_ndcg(test, model);
-    printf("%d: %f %f %f\n", iter, perror.first, perror.second, ndcg);
+    
+    f = compute_loss(model, train) + .5 * lambda * (model.Unormsq() + model.Vnormsq());
+    printf("%3d: %f / %f %f %f\n", iter, f, perror.first, perror.second, ndcg);
 
+    if ((f_old - f) / f_old < 1e-5) break;
+    f_old = f;
   }	
 
   delete[] Xsrc;
@@ -136,7 +143,7 @@ int main(int argc, char *argv[]) {
  	double lambda = atof(argv[3]);
 	int nr_threads = atoi(argv[4]);
 
-  als(model, train, test, 30, lambda);
+  als(model, train, test, 50, lambda);
 
 }
 
