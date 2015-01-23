@@ -28,7 +28,8 @@ enum init_option_t {INIT_RANDOM, INIT_SVD, INIT_ALLONES};
 class Problem {
   protected:
     int n_users, n_items, n_train_comps; 	          // number of users/items in training sample, number of samples in traing and testing data set
-    int lambda, n_threads;                          // parameters
+    int n_threads;                          // parameters
+    double lambda;
     double alpha, beta;                             // parameter for sgd
     vector<int> n_comps_by_user, n_comps_by_item;
 
@@ -175,7 +176,7 @@ void Problem::read_data(char *train_file, char* test_file) {
 }	
 
 double Problem::compute_objective() {
-  return compute_loss(model, train, loss_option) + .5 * (model.Unormsq() + model.Vnormsq());		
+  return compute_loss(model, train, loss_option) + .5 * lambda * (model.Unormsq() + model.Vnormsq());		
 }
 
 void Problem::run_altsvm(double l, init_option_t option) {
@@ -197,14 +198,14 @@ void Problem::run_altsvm(double l, init_option_t option) {
     
   // Alternating RankSVM
   double start = omp_get_wtime();
-  double f, f_old = 1e20;
+  double f, f_old;
 
   initialize(option);
 
   std::pair<double,double> error = compute_pairwiseError(test, model);
   double ndcg  = compute_ndcg(test, model);
-  f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
-  printf("0, %f, %f, %f, %f / %f, %f, %f / %f\n", f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option), error.first, error.second, ndcg, omp_get_wtime() - start);
+  f_old = compute_loss(model, train, loss_option) + .5 * lambda * (model.Unormsq() + model.Vnormsq());
+  printf("0, %f, %f, %f, %f / %f, %f, %f / %f\n", f_old, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option), error.first, error.second, ndcg, omp_get_wtime() - start);
 
   double normsq;
   for (int OuterIter = 1; OuterIter <= MaxIter; ++OuterIter) {
@@ -482,11 +483,12 @@ void Problem::run_sgd_random(double l, double a, double b, init_option_t option)
   this->initialize(option); 
 
   std::pair<double,double> error;
-  double ndcg;
+  double ndcg, f;
   error = compute_pairwiseError(test, model);
   ndcg  = compute_ndcg(test, model);
-  printf("0, %f, %f, %f, %f, %f, %f, %f\n", model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option), error.first, error.second, ndcg, omp_get_wtime() - time);
- 
+  f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
+  printf("0, %f, %f, %f, %f / %f, %f, %f / %f\n", f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option), error.first, error.second, ndcg, omp_get_wtime() - time);
+
   lambda = l;
   alpha  = a;
   beta   = b;
@@ -511,7 +513,8 @@ void Problem::run_sgd_random(double l, double a, double b, init_option_t option)
 
     error = compute_pairwiseError(test, model);
     ndcg  = compute_ndcg(test, model);
-    printf("%d, %f, %f, %f, %f, %f, %f, %f\n", (icycle+1)*n_max_updates, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option), error.first, error.second, ndcg, omp_get_wtime() - time);
+    f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
+    printf("%d, %f, %f, %f, %f / %f, %f, %f / %f\n", (icycle+1)*n_max_updates, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option), error.first, error.second, ndcg, omp_get_wtime() - time);
   
     if (icycle < 5) n_max_updates *= 4;
   } 
