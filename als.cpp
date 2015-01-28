@@ -14,7 +14,7 @@
 
 #include "model.hpp"
 #include "ratings.hpp"
-#include "eval.hpp"
+#include "loss.hpp"
 
 void als(Model &model, const RatingMatrix &train, const RatingMatrix &test, int nIter, double lambda) {
 
@@ -66,9 +66,10 @@ void als(Model &model, const RatingMatrix &train, const RatingMatrix &test, int 
   double f, f_old;
   std::pair<double,double> perror = compute_pairwiseError(test, model);
   double ndcg = compute_ndcg(test, model);
-  
-  f_old = compute_loss(model, train) + .5 * lambda * (model.Unormsq() + model.Vnormsq());
-  printf("  0: %f / %f %f %f\n", f_old, perror.first, perror.second, ndcg);
+ 
+  double loss = compute_loss(model, train); 
+  f_old = loss + .5 * lambda * (model.Unormsq() + model.Vnormsq());
+  printf("  0: %f %f %f / %f %f %f\n", f_old, model.Unormsq(), model.Vnormsq(), perror.first, perror.second, ndcg);
 
   int n;
   for(int iter=1; iter<=nIter; ++iter) {
@@ -113,9 +114,10 @@ void als(Model &model, const RatingMatrix &train, const RatingMatrix &test, int 
 
     std::pair<double,double> perror = compute_pairwiseError(test, model);
     double ndcg = compute_ndcg(test, model);
-    
-    f = compute_loss(model, train) + .5 * lambda * (model.Unormsq() + model.Vnormsq());
-    printf("%3d: %f / %f %f %f\n", iter, f, perror.first, perror.second, ndcg);
+   
+    loss = compute_loss(model, train); 
+    f = loss + .5 * lambda * (model.Unormsq() + model.Vnormsq());
+    printf("%3d: %f %f %f %f / %f %f %f\n", iter, f, loss, model.Unormsq(), model.Vnormsq(), perror.first, perror.second, ndcg);
 
     if ((f_old - f) / f_old < 1e-5) break;
     f_old = f;
@@ -127,6 +129,11 @@ void als(Model &model, const RatingMatrix &train, const RatingMatrix &test, int 
 
 
 int main(int argc, char *argv[]) {
+
+  if (argc < 2) {
+    printf("./als [train rating] [test rating] [lambda] [# threads]\n");
+    return 0;
+  }
 
   RatingMatrix train, test;
 

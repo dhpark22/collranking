@@ -35,22 +35,21 @@ int main (int argc, char* argv[]) {
 	
   double time;
 
- 
   time = omp_get_wtime(); 
   printf("Running AltSVM with random init.. \n");  
-	p.run_altsvm(lambda, INIT_RANDOM);
+	p.run_altsvm(L2_HINGE, lambda, INIT_RANDOM);
 
   time = omp_get_wtime(); 
   printf("Running AltSVM with svd init.. \n");  
-	p.run_altsvm(lambda, INIT_SVD);
+	p.run_altsvm(L2_HINGE, lambda, INIT_SVD);
 
-  time = omp_get_wtime();
-  printf("Running Random SGD with random init.. \n");
-  p.run_sgd_random(lambda, 1e-1, 1e-5, INIT_RANDOM);
+  time = omp_get_wtime(); 
+  printf("Running AltSVM with all-ones init.. \n");  
+	p.run_altsvm(L2_HINGE, lambda, INIT_ALLONES);
 
   time = omp_get_wtime();
   printf("Running Random SGD with SVD init.. \n");
-  p.run_sgd_random(lambda, 1e-1, 1e-5, INIT_SVD);
+  p.run_sgd_random(L2_HINGE, lambda, 1e-1, 1e-5, INIT_SVD);
 
 /*
   time = omp_get_wtime();

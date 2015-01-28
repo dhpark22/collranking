@@ -114,6 +114,29 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
         ratings[j].swap(ratings[idx]);
 			}
 
+      std::vector<comparison> comp_list(0);
+
+	  	// Construct the whole comparison list for user i
+		  for(int j1=0; j1<n_train; j1++) {
+			  for(int j2=j1+1; j2<n_train; j2++) {
+			  	if (ratings[j1].score > ratings[j2].score)
+					  comp_list.push_back(comparison(0, j1, j2, 1));
+				  else if (ratings[j1].score < ratings[j2].score)
+					  comp_list.push_back(comparison(0, j2, j1, 1));
+			  }
+		  }
+
+      // Subsample comparisons for training 
+      size_t n_comps = n_train;
+      if (n_comps > comp_list.size()) n_comps = comp_list.size();
+      for(int j=0; j<n_comps; j++) {
+        int idx = RandIDX(j, comp_list.size());
+        train_file << new_user_id << ' ' << ratings[comp_list[idx].item1_id].item_id << 
+                                     ' ' << ratings[comp_list[idx].item2_id].item_id << std::endl;
+
+        comp_list[j].swap(comp_list[idx]);
+      }
+/*
       // Take all possible comparisons for the training ratings
 			for(int j1=0; j1<n_train; j1++) {
 				for(int j2=j1+1; j2<n_train; j2++) {
@@ -125,7 +148,7 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
 
 				}
 			}
-
+*/
       // Write training ratings in lsvm format
       std::sort(ratings.begin(), ratings.begin()+n_train, rate_userwise);
       for(int j=0; j<n_train; ++j) {
@@ -138,7 +161,7 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
       sort(ratings.begin()+n_train, ratings.end(), rate_userwise);
       for(int j=n_train; j<ratings.size(); ++j) {
         test_rating_lsvm  << ratings[j].item_id << ':' << ratings[j].score << ' ';
-        test_rating_prea  << new_user_id << ' ' << ratings[j].item_id << ' ' << ratings[j].score << std::endl; 
+        test_rating_prea  << new_user_id << '\t' << ratings[j].item_id << std::endl; 
         train_ratings.push_back(rating(new_user_id, ratings[j].item_id, ratings[j].score));
       }
       test_rating_lsvm << std::endl;

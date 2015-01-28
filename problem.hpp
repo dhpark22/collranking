@@ -19,7 +19,7 @@
 #include "elements.hpp"
 #include "model.hpp"
 #include "ratings.hpp"
-#include "eval.hpp"
+#include "loss.hpp"
 
 using namespace std;
 
@@ -39,18 +39,22 @@ class Problem {
     vector<comparison>   train, train_user, train_item;
     vector<int>          tridx, tridx_user, tridx_item;
 
-    RatingMatrix test;
+    RatingMatrix tr, test;
 
-    bool sgd_step(const comparison&, const bool, const double, const double);
+    double dcd_delta(loss_option_t, double, double, double, double);
+    bool sgd_step(const comparison&, loss_option_t, double, double);
     void de_allocate();					            // deallocate U, V when they are used multiple times by different methods
     void initialize(init_option_t); 
+    
+    comparison random_comp(int, int);
+    std::mt19937 random_comp_gen;
  
   public:
     Problem(int, int);				// default constructor
     ~Problem();					// default destructor
     void read_data(char*, char*);	// read function
-    void run_altsvm(double, init_option_t);
-    void run_sgd_random(double, double, double, init_option_t);
+    void run_altsvm(loss_option_t, double, init_option_t, int);
+    void run_sgd_random(loss_option_t, double, double, double, init_option_t);
     void run_sgd_nomad_user(double, double, double, init_option_t);
     void run_sgd_nomad_item(double, double, double, init_option_t);
     double compute_objective();
@@ -59,6 +63,7 @@ class Problem {
 // may be more parameters can be specified here
 Problem::Problem (int r, int np) : model(r) { 
   n_threads = np;
+  random_comp_gen.seed(time(NULL));
 }
 
 Problem::~Problem () {
@@ -167,6 +172,9 @@ void Problem::read_data(char *train_file, char* test_file) {
     }
   }
 
+  // reat train ratings (lsvm format)
+  //tr.read_lsvm(train_rating);
+
   // read test ratings (lsvm format)
   test.read_lsvm(test_file);
   test.compute_dcgmax(10);
@@ -179,13 +187,41 @@ double Problem::compute_objective() {
   return compute_loss(model, train, loss_option) + .5 * lambda * (model.Unormsq() + model.Vnormsq());		
 }
 
-void Problem::run_altsvm(double l, init_option_t option) {
+double Problem::dcd_delta(loss_option_t loss_option, double alpha, double a, double b, double C) {
+
+  double delta;
+
+  switch(loss_option) {
+    case L1_HINGE:
+      // closed-form solution
+      delta = (1. - b) / a; 
+      delta = min(max(0., alpha + delta), C) - alpha;
+    case L2_HINGE:
+      // closed-form solution
+      delta = (1. - b - alpha*.5/C) / (a + .5/C);
+      delta = max(0., alpha + delta) - alpha;      
+      break;
+    case LOGISTIC:
+      // dual coordinate descent step
+      delta = 0.;
+      break;
+    case SQUARED:
+      // dual coordinate descent step
+      delta = 0.;
+  }
+
+  return delta;
+
+}
+
+void Problem::run_altsvm(loss_option_t loss_option = L2_HINGE, double l = 10., init_option_t init_option = INIT_RANDOM, int MaxIter = 50) {
 
   printf("Alternating rankSVM with %d threads.. \n", n_threads);
 
   lambda = l;
+  double lambda_user = l / n_users * n_items;
+  double lambda_item = l;
 
-  int MaxIter = 100;
   int n_max_updates = n_train_comps/n_threads;
 
   double *alphaV = new double[this->n_train_comps];
@@ -200,7 +236,7 @@ void Problem::run_altsvm(double l, init_option_t option) {
   double start = omp_get_wtime();
   double f, f_old;
 
-  initialize(option);
+  initialize(init_option);
 
   std::pair<double,double> error = compute_pairwiseError(test, model);
   double ndcg  = compute_ndcg(test, model);
@@ -251,8 +287,7 @@ void Problem::run_altsvm(double l, init_option_t option) {
           p2 += user_vec[j] * user_vec[j];
         } 
 
-        double delta = (1. - p1 - alphaV[idx]*.5*lambda) / (p2*2. + .5*lambda);
-        delta = max(0., delta + alphaV[idx]) - alphaV[idx];      
+        double delta = dcd_delta(loss_option, alphaV[idx], p2*2., p1, 1./lambda);
 
         if (delta != 0.) { 
           alphaV[idx] += delta;
@@ -314,9 +349,8 @@ void Problem::run_altsvm(double l, init_option_t option) {
           p2 += d*d;
         } 
 
-        double delta = (1. - p1 - alphaU[idx]*.5*lambda) / (p2 + .5*lambda);
-        delta = max(0., alphaU[idx] + delta) - alphaU[idx];      
- 
+        double delta = dcd_delta(loss_option, alphaU[idx], p2, p1, 1./lambda);
+
         alphaU[idx] += delta;
         for(int j=0; j<model.rank; ++j) {
           d = delta * (item1_vec[j] - item2_vec[j]);
@@ -334,8 +368,7 @@ void Problem::run_altsvm(double l, init_option_t option) {
     // stopping rule
     if ((f_old - f) / f_old < 1e-5) break;
     f_old = f;
-
-    //if (OuterIter < 5) n_max_updates *= 2;
+  
   }
 
   delete [] slack;
@@ -343,7 +376,7 @@ void Problem::run_altsvm(double l, init_option_t option) {
 	delete [] alphaU;
 }	
 
-bool Problem::sgd_step(const comparison& comp, const bool first_item_only, const double l, const double step_size) {
+bool Problem::sgd_step(const comparison& comp, loss_option_t loss_option, double l, double step_size) {
   double *user_vec  = &(model.U[comp.user_id  * model.rank]);
   double *item1_vec = &(model.V[comp.item1_id * model.rank]);
   double *item2_vec = &(model.V[comp.item2_id * model.rank]);
@@ -352,28 +385,38 @@ bool Problem::sgd_step(const comparison& comp, const bool first_item_only, const
   int n_comps_item1 = n_comps_by_item[comp.item1_id];
   int n_comps_item2 = n_comps_by_item[comp.item2_id];
 
-  if ((n_comps_user < 1) || (n_comps_item1 < 1) || (n_comps_item2 < 1))
-    printf("ERROR\n");
+  if ((n_comps_user < 1) || (n_comps_item1 < 1) || (n_comps_item2 < 1)) printf("ERROR\n");
 
-  double err = 1.;
-  for(int k=0; k<model.rank; k++) err -= user_vec[k] * comp.comp * (item1_vec[k] - item2_vec[k]);
+  double prod = 0.;
+  for(int k=0; k<model.rank; k++) prod += user_vec[k] * comp.comp * (item1_vec[k] - item2_vec[k]);
 
-  if (err > 0) {	
-    double grad = -2. * err;		// gradient direction for l2 hinge loss
+  double grad = 0.;
+  switch(loss_option) {
+    case L2_HINGE:
+      grad = (prod<1.) ? 2.*(prod-1.):0.;
+      break;
+    case L1_HINGE:
+      grad = (prod<1.) ? -1.:0.;
+      break;
+    case LOGISTIC:
+      grad = -exp(-prod)/(1.+exp(-prod));
+      break;
+    case SQUARED:
+      grad = 2.*(prod-1.);
+  }
 
+  if (grad != 0.) {
     for(int k=0; k<model.rank; k++) {
 	    double user_dir  = step_size * (grad * comp.comp * (item1_vec[k] - item2_vec[k]) + l / (double)n_comps_user * user_vec[k]);
 	    double item1_dir = step_size * (grad * comp.comp * user_vec[k] + l / (double)n_comps_item1 * item1_vec[k]);
-      double item2_dir;
-
-      if (!first_item_only) item2_dir = step_size * (grad * -comp.comp * user_vec[k] + l / (double)n_comps_item2 * item2_vec[k]);
+      double item2_dir = step_size * (grad * -comp.comp * user_vec[k] + l / (double)n_comps_item2 * item2_vec[k]);
 
 	    user_vec[k]  -= user_dir;
 	    item1_vec[k] -= item1_dir;
-      if (!first_item_only) item2_vec[k] -= item2_dir;
+      item2_vec[k] -= item2_dir;
     }
 
-	return true;
+	  return true;
   }
 
   return false;
@@ -475,7 +518,7 @@ void Problem::initialize(init_option_t option) {
 
 }
 
-void Problem::run_sgd_random(double l, double a, double b, init_option_t option) {
+void Problem::run_sgd_random(loss_option_t loss_option = L2_HINGE, double l = 10., double a = 1., double b = 1., init_option_t option = INIT_RANDOM) {
 
   printf("Random SGD with %d threads..\n", n_threads);
 
@@ -506,8 +549,8 @@ void Problem::run_sgd_random(double l, double a, double b, init_option_t option)
       for(int n_updates=1; n_updates<n_max_updates; ++n_updates) {
         int idx = randidx(gen);
         ++c[idx];
-        sgd_step(train[idx], false, lambda, 
-                 alpha/(1.+beta*pow((double)((n_updates+n_max_updates*icycle)*n_threads),1.)));
+        double stepsize = alpha/(1.+beta*pow((double)((n_updates+n_max_updates*icycle)*n_threads), .5));
+        sgd_step(train[idx], loss_option, lambda, stepsize);
       }
     }
 
@@ -577,7 +620,7 @@ void Problem::run_sgd_nomad_user(double l, double a, double b, init_option_t opt
           }
 
           for(int idx=tridx_user[uid*n_threads+tid]; idx<tridx_user[uid*n_threads+tid+1]; ++idx) {
-            sgd_step(train_user[idx], false, lambda, 
+            sgd_step(train_user[idx], L2_HINGE, lambda, 
                      alpha/(1.+beta*(double)(n_updates_total + n_updates*n_threads)));
             ++n_updates;
           }
@@ -669,7 +712,7 @@ void Problem::run_sgd_nomad_item(double l, double a, double b, init_option_t opt
           }
 
           for(int idx=tridx_item[iid*n_threads+tid]; idx<tridx_item[iid*n_threads+tid+1]; ++idx) {
-            sgd_step(train_item[idx], false, lambda, 
+            sgd_step(train_item[idx], L2_HINGE, lambda, 
                      alpha/(1.+beta*(double)(n_updates_total + n_updates*n_threads)));
             ++n_updates;
           }

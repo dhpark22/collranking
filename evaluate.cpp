@@ -3,7 +3,7 @@
 #include <utility>
 #include <string>
 #include "ratings.hpp"
-#include "eval.hpp"
+#include "loss.hpp"
 
 int main (int argc, char* argv[]) {
 
