@@ -14,10 +14,12 @@
 
 class Evaluator {
   public: 
-  Evaluator();
-  virtual void evaluate(const Model&);
+  //Evaluator();
+  virtual void evaluate(const Model&) {}
 
 };
+
+
 
 class EvaluatorBinary : public Evaluator {
   std::vector<std::unordered_set<int> > train, test;	
@@ -61,10 +63,12 @@ struct pkcomp {
 };
 
 void EvaluatorBinary::load_files (char* train_repo, char* test_repo, std::vector<int>& ik) {
+  	std::cout << "load file" << std::endl;
 	std::ifstream tr(train_repo);
 	if (tr) {
 		int uid, iid;
 		while (tr >> uid >> iid) {
+			if (train.size() < uid) train.resize(uid);
 			train[uid - 1].insert(iid - 1);
 		}
 	} else {
@@ -77,6 +81,7 @@ void EvaluatorBinary::load_files (char* train_repo, char* test_repo, std::vector
 	if (te) {
 		int uid, iid;
 		while (te >> uid >> iid) {
+			if (test.size() < uid) test.resize(uid);
 			test[uid - 1].insert(iid - 1);
 		}
 	} else {

@@ -53,7 +53,7 @@ class Problem {
   public:
     Problem(int, int);				// default constructor
     ~Problem();					// default destructor
-    void read_data(char*, char*);	// read function
+    void read_data(char*);	// read function
     void run_altsvm(Evaluator&, loss_option_t, double, init_option_t, int);
     void run_sgd_random(loss_option_t, double, double, double, init_option_t);
     void run_sgd_nomad_user(double, double, double, init_option_t);
@@ -71,7 +71,7 @@ Problem::~Problem () {
   model.de_allocate();
 }
 
-void Problem::read_data(char *train_file, char* test_file) {
+void Problem::read_data(char *train_file) {
 
   // Prepare to read files
   n_users = n_items = 0;
@@ -178,6 +178,7 @@ void Problem::read_data(char *train_file, char* test_file) {
 
   // memory allocation
   model.allocate(n_users, n_items);
+  printf("read file done\n");
 }	
 
 double Problem::compute_objective() {
