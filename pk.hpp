@@ -20,12 +20,18 @@ class Evaluator {
 };
 
 class EvaluatorBinary : public Evaluator {
-  
+  std::vector<std::unordered_set<int> > train, test;	
+  std::vector<int> k;
   // please add your structure to store the datasets
 
   public:
+<<<<<<< HEAD
     void load_files();
 };
+=======
+    void load_files(char*, char*, std::vector<int>&);
+}
+>>>>>>> 1b481e9e5095257ad0bf4fed42b9256032017247
 
 class EvaluatorRating : public Evaluator {
 
@@ -57,15 +63,7 @@ struct pkcomp {
 	}
 };
 
-void EvaluateBinary::load_files (char* train_repo, char* test_repo, std::vector<int>& k) {
-
-} 
-
-void EvaluateBinary::evaluate (const Model& model) {
-	std::vector<std::unordered_set<int> > train, test;	
-	train.resize(model.n_users);
-	test.resize(model.n_users);
-	
+void EvaluateBinary::load_files (char* train_repo, char* test_repo, std::vector<int>& ik) {
 	std::ifstream tr(train_repo);
 	if (tr) {
 		int uid, iid;
@@ -90,6 +88,13 @@ void EvaluateBinary::evaluate (const Model& model) {
 	}
 	te.close();
 
+	k = ik;
+} 
+
+void EvaluateBinary::evaluate (const Model& model) {
+	train.resize(model.n_users);
+	test.resize(model.n_users);
+	
 	int maxK = k[k.size() - 1];
 	std::vector<double> ret(k.size(), 0);
 	std::priority_queue<std::pair<int, double>, std::vector<std::pair<int, double> >, pkcomp> pq;	
@@ -130,7 +135,11 @@ void EvaluateBinary::evaluate (const Model& model) {
 	for (int i = 0; i < k.size(); ++i) {
 		ret[i] = ret[i] / model.n_users / k[i];
 	}
-	return ret;
+
+	printf("compute precision at k\n");
+	for (int i = 0; i < k.size(); ++i) {
+		printf("k %d, precision %f\n", k[i], ret[i]);
+	}
 }
 
 #endif
