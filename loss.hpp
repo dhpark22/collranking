@@ -131,9 +131,16 @@ std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, c
 
     for(int i=TestRating.idx[uid]; i<TestRating.idx[uid+1]; ++i) {
       int iid = TestRating.ratings[i].item_id;
-      double prod = 0.;
-      for(int k=0; k<PredictedModel.rank; ++k) prod += PredictedModel.U[uid * PredictedModel.rank + k] * PredictedModel.V[iid * PredictedModel.rank + k];
-      score[iid] = prod;
+      
+      if (iid < PredictedModel.n_items) {
+        double prod = 0.;
+        for(int k=0; k<PredictedModel.rank; ++k) prod += PredictedModel.U[uid * PredictedModel.rank + k] * PredictedModel.V[iid * PredictedModel.rank + k];
+        score[iid] = prod;
+      }
+      else {
+        score[iid] = -1e10;
+      }
+
       if (TestRating.ratings[i].score > max_sc) max_sc = TestRating.ratings[i].score;
     }
 
@@ -264,9 +271,15 @@ double compute_ndcg(const RatingMatrix& TestRating, const Model& PredictedModel)
     score.clear();
     for(int i=TestRating.idx[uid]; i<TestRating.idx[uid+1]; ++i) {
       int iid = TestRating.ratings[i].item_id;
-      double prod = 0.;
-      for(int k=0; k<PredictedModel.rank; ++k) prod += PredictedModel.U[uid * PredictedModel.rank + k] * PredictedModel.V[iid * PredictedModel.rank + k];
-      score.push_back(prod);
+
+      if (iid < PredictedModel.n_items) {
+        double prod = 0.;
+        for(int k=0; k<PredictedModel.rank; ++k) prod += PredictedModel.U[uid * PredictedModel.rank + k] * PredictedModel.V[iid * PredictedModel.rank + k];
+        score.push_back(prod);
+      }
+      else {
+        score.push_back(-1e10);
+      }
     }
     
     ndcg_sum += TestRating.compute_user_ndcg(uid, score);
