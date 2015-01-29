@@ -13,7 +13,7 @@
 #include "loss.hpp"
 
 class Evaluator {
-  
+  public: 
   Evaluator();
   virtual void evaluate(const Model&);
 
@@ -26,7 +26,8 @@ class EvaluatorBinary : public Evaluator {
 
   public:
     void load_files(char*, char*, std::vector<int>&);
-}
+    void evaluate(const Model&);
+};
 
 class EvaluatorRating : public Evaluator {
 
@@ -34,16 +35,17 @@ class EvaluatorRating : public Evaluator {
 
   public:
     void load_files();  
+    void evaluate(const Model&);
 };
 
-void EvaluateRating::load_files (char* test_ratings) {
+void EvaluatorRating::load_files (char* test_ratings) {
 
   test.read_lsvm(test_ratings);
   test.compute_dcgmax(10);
 
 }
 
-void EvaluateRating::evaluate(const Model& model) {
+void EvaluatorRating::evaluate(const Model& model) {
   
   pair<double,double> err = compute_pairwiseError(test, model);
   double ndcg = compute_ndcg(test, model);
@@ -58,7 +60,7 @@ struct pkcomp {
 	}
 };
 
-void EvaluateBinary::load_files (char* train_repo, char* test_repo, std::vector<int>& ik) {
+void EvaluatorBinary::load_files (char* train_repo, char* test_repo, std::vector<int>& ik) {
 	std::ifstream tr(train_repo);
 	if (tr) {
 		int uid, iid;
@@ -86,7 +88,7 @@ void EvaluateBinary::load_files (char* train_repo, char* test_repo, std::vector<
 	k = ik;
 } 
 
-void EvaluateBinary::evaluate (const Model& model) {
+void EvaluatorBinary::evaluate (const Model& model) {
 	train.resize(model.n_users);
 	test.resize(model.n_users);
 	
