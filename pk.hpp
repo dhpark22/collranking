@@ -93,16 +93,13 @@ void EvaluatorBinary::load_files (char* train_repo, char* test_repo, std::vector
 } 
 
 void EvaluatorBinary::evaluate (const Model& model) {
-	train.resize(model.n_users);
-	test.resize(model.n_users);
-	
 	int maxK = k[k.size() - 1];
 	std::vector<double> ret(k.size(), 0);
 	std::priority_queue<std::pair<int, double>, std::vector<std::pair<int, double> >, pkcomp> pq;	
 
 	for (int i = 0; i < model.n_users; ++i) {
 		for (int j = 0; j < model.n_items; ++j) {
-			if (train[i].find(j) == train[i].end() ) {
+			if (train[i].find(j) != train[i].end() ) {
 				continue;
 			}
 
@@ -126,7 +123,9 @@ void EvaluatorBinary::evaluate (const Model& model) {
 			int item = pq.top().first;
 			for (int j = k.size() - 1; j >= 0; --j) {
 				if (ps > k[j]) break;
-				if (test[i].find(item) != test[i].end() ) ++ret[j];
+				if (test[i].find(item) != test[i].end() ) {
+					ret[j] += 1;
+				}
 			}
 			pq.pop();
 			--ps;
