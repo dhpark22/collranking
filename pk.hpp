@@ -14,7 +14,6 @@
 
 class Evaluator {
   public: 
-  //Evaluator();
   virtual void evaluate(const Model&) {}
 
 };
