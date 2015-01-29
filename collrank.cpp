@@ -17,7 +17,7 @@
 int main (int argc, char* argv[]) {
   if (argc < 5) {
     cout << "Solve collaborative ranking problem with given training/testing data set" << endl;
-    cout << "Usage ./collrank [training (comparison) file] [test (rating) file] [rank] [num_threads]" << endl;
+    cout << "Usage ./collrank [training (comparison) file] [test (rating) file] [rank] [lambda] [num_threads]" << endl;
     return 0;
   }
 
