@@ -25,13 +25,8 @@ class EvaluatorBinary : public Evaluator {
   // please add your structure to store the datasets
 
   public:
-<<<<<<< HEAD
-    void load_files();
-};
-=======
     void load_files(char*, char*, std::vector<int>&);
 }
->>>>>>> 1b481e9e5095257ad0bf4fed42b9256032017247
 
 class EvaluatorRating : public Evaluator {
 
