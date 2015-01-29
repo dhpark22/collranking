@@ -20,6 +20,7 @@
 #include "model.hpp"
 #include "ratings.hpp"
 #include "loss.hpp"
+#include "pk.hpp"
 
 using namespace std;
 
@@ -39,7 +40,7 @@ class Problem {
     vector<comparison>   train, train_user, train_item;
     vector<int>          tridx, tridx_user, tridx_item;
 
-    RatingMatrix tr, test;
+    RatingMatrix tr;
 
     double dcd_delta(loss_option_t, double, double, double, double);
     bool sgd_step(const comparison&, loss_option_t, double, double);
@@ -174,10 +175,6 @@ void Problem::read_data(char *train_file, char* test_file) {
 
   // reat train ratings (lsvm format)
   //tr.read_lsvm(train_rating);
-
-  // read test ratings (lsvm format)
-  test.read_lsvm(test_file);
-  test.compute_dcgmax(10);
 
   // memory allocation
   model.allocate(n_users, n_items);
@@ -376,52 +373,6 @@ void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option = L2_HINGE, 
 	delete [] alphaU;
 }	
 
-bool Problem::sgd_step(const comparison& comp, loss_option_t loss_option, double l, double step_size) {
-  double *user_vec  = &(model.U[comp.user_id  * model.rank]);
-  double *item1_vec = &(model.V[comp.item1_id * model.rank]);
-  double *item2_vec = &(model.V[comp.item2_id * model.rank]);
-
-  int n_comps_user  = n_comps_by_user[comp.user_id];
-  int n_comps_item1 = n_comps_by_item[comp.item1_id];
-  int n_comps_item2 = n_comps_by_item[comp.item2_id];
-
-  if ((n_comps_user < 1) || (n_comps_item1 < 1) || (n_comps_item2 < 1)) printf("ERROR\n");
-
-  double prod = 0.;
-  for(int k=0; k<model.rank; k++) prod += user_vec[k] * comp.comp * (item1_vec[k] - item2_vec[k]);
-
-  double grad = 0.;
-  switch(loss_option) {
-    case L2_HINGE:
-      grad = (prod<1.) ? 2.*(prod-1.):0.;
-      break;
-    case L1_HINGE:
-      grad = (prod<1.) ? -1.:0.;
-      break;
-    case LOGISTIC:
-      grad = -exp(-prod)/(1.+exp(-prod));
-      break;
-    case SQUARED:
-      grad = 2.*(prod-1.);
-  }
-
-  if (grad != 0.) {
-    for(int k=0; k<model.rank; k++) {
-	    double user_dir  = step_size * (grad * comp.comp * (item1_vec[k] - item2_vec[k]) + l / (double)n_comps_user * user_vec[k]);
-	    double item1_dir = step_size * (grad * comp.comp * user_vec[k] + l / (double)n_comps_item1 * item1_vec[k]);
-      double item2_dir = step_size * (grad * -comp.comp * user_vec[k] + l / (double)n_comps_item2 * item2_vec[k]);
-
-	    user_vec[k]  -= user_dir;
-	    item1_vec[k] -= item1_dir;
-      item2_vec[k] -= item2_dir;
-    }
-
-	  return true;
-  }
-
-  return false;
-}
-
 void Problem::initialize(init_option_t option) {
 
   switch(option) {
@@ -516,6 +467,54 @@ void Problem::initialize(init_option_t option) {
     }
   }
 
+}
+
+
+/*
+bool Problem::sgd_step(const comparison& comp, loss_option_t loss_option, double l, double step_size) {
+  double *user_vec  = &(model.U[comp.user_id  * model.rank]);
+  double *item1_vec = &(model.V[comp.item1_id * model.rank]);
+  double *item2_vec = &(model.V[comp.item2_id * model.rank]);
+
+  int n_comps_user  = n_comps_by_user[comp.user_id];
+  int n_comps_item1 = n_comps_by_item[comp.item1_id];
+  int n_comps_item2 = n_comps_by_item[comp.item2_id];
+
+  if ((n_comps_user < 1) || (n_comps_item1 < 1) || (n_comps_item2 < 1)) printf("ERROR\n");
+
+  double prod = 0.;
+  for(int k=0; k<model.rank; k++) prod += user_vec[k] * comp.comp * (item1_vec[k] - item2_vec[k]);
+
+  double grad = 0.;
+  switch(loss_option) {
+    case L2_HINGE:
+      grad = (prod<1.) ? 2.*(prod-1.):0.;
+      break;
+    case L1_HINGE:
+      grad = (prod<1.) ? -1.:0.;
+      break;
+    case LOGISTIC:
+      grad = -exp(-prod)/(1.+exp(-prod));
+      break;
+    case SQUARED:
+      grad = 2.*(prod-1.);
+  }
+
+  if (grad != 0.) {
+    for(int k=0; k<model.rank; k++) {
+	    double user_dir  = step_size * (grad * comp.comp * (item1_vec[k] - item2_vec[k]) + l / (double)n_comps_user * user_vec[k]);
+	    double item1_dir = step_size * (grad * comp.comp * user_vec[k] + l / (double)n_comps_item1 * item1_vec[k]);
+      double item2_dir = step_size * (grad * -comp.comp * user_vec[k] + l / (double)n_comps_item2 * item2_vec[k]);
+
+	    user_vec[k]  -= user_dir;
+	    item1_vec[k] -= item1_dir;
+      item2_vec[k] -= item2_dir;
+    }
+
+	  return true;
+  }
+
+  return false;
 }
 
 void Problem::run_sgd_random(loss_option_t loss_option = L2_HINGE, double l = 10., double a = 1., double b = 1., init_option_t option = INIT_RANDOM) {
@@ -747,5 +746,6 @@ void Problem::run_sgd_nomad_item(double l, double a, double b, init_option_t opt
   for(int i=0; i<n_threads; i++) delete[] queue[i];
   delete[] queue;
 }
+*/
 
 #endif

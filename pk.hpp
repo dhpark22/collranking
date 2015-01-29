@@ -9,6 +9,8 @@
 #include <unordered_set>
 
 #include "model.hpp"
+#include "ratings.hpp"
+#include "loss.hpp"
 
 class Evaluator {
   
@@ -23,7 +25,7 @@ class EvaluatorBinary : public Evaluator {
 
   public:
     void load_files();
-}
+};
 
 class EvaluatorRating : public Evaluator {
 
@@ -31,9 +33,21 @@ class EvaluatorRating : public Evaluator {
 
   public:
     void load_files();  
+};
+
+void EvaluateRating::load_files (char* test_ratings) {
+
+  test.read_lsvm(test_ratings);
+  test.compute_dcgmax(10);
+
 }
 
 void EvaluateRating::evaluate(const Model& model) {
+  
+  pair<double,double> err = compute_pairwiseError(test, model);
+  double ndcg = compute_ndcg(test, model);
+
+  printf(" %f %f %f ", err.first, err.second, ndcg);
 
 }
 

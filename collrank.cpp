@@ -36,8 +36,8 @@ int main (int argc, char* argv[]) {
 	
   double time;
 
-  EvaluatorBinary eval;
-  eval.load_files(argv[1], argv[2]);
+  EvaluatorRating eval;
+  eval.load_files(argv[2]);
 
   time = omp_get_wtime(); 
   printf("Running AltSVM with random init.. \n");  
@@ -51,11 +51,11 @@ int main (int argc, char* argv[]) {
   printf("Running AltSVM with all-ones init.. \n");  
 	p.run_altsvm(eval, L2_HINGE, lambda, INIT_ALLONES);
 
+/*
   time = omp_get_wtime();
   printf("Running Random SGD with SVD init.. \n");
   p.run_sgd_random(L2_HINGE, lambda, 1e-1, 1e-5, INIT_SVD);
 
-/*
   time = omp_get_wtime();
   printf("Running NOMADi SGD.. \n");
   p.run_sgd_nomad_item(100., 1e-1, 1e-5, INIT_RANDOM);
