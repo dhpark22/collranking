@@ -214,7 +214,7 @@ double Problem::dcd_delta(loss_option_t loss_option, double alpha, double a, dou
 
 }
 
-void Problem::run_altsvm(loss_option_t loss_option = L2_HINGE, double l = 10., init_option_t init_option = INIT_RANDOM, int MaxIter = 50) {
+void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option = L2_HINGE, double l = 10., init_option_t init_option = INIT_RANDOM, int MaxIter = 50, ) {
 
   printf("Alternating rankSVM with %d threads.. \n", n_threads);
 
@@ -238,10 +238,10 @@ void Problem::run_altsvm(loss_option_t loss_option = L2_HINGE, double l = 10., i
 
   initialize(init_option);
 
-  std::pair<double,double> error = compute_pairwiseError(test, model);
-  double ndcg  = compute_ndcg(test, model);
   f_old = compute_loss(model, train, loss_option) + .5 * lambda * (model.Unormsq() + model.Vnormsq());
-  printf("0, %f, %f, %f, %f / %f, %f, %f / %f\n", f_old, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option), error.first, error.second, ndcg, omp_get_wtime() - start);
+  printf("0, %f / %f, %f, %f, %f", omp_get_wtime() - start, f_old, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
+  eval.evaluate(model);
+  printf("\n");
 
   double normsq;
   for (int OuterIter = 1; OuterIter <= MaxIter; ++OuterIter) {
@@ -302,10 +302,10 @@ void Problem::run_altsvm(loss_option_t loss_option = L2_HINGE, double l = 10., i
     }
 
     // compute performance measure
-    error = compute_pairwiseError(test, model);
-    ndcg  = compute_ndcg(test, model);
     f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
-    printf("%d, %f, %f, %f, %f / %f, %f, %f / %f\n", OuterIter, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option), error.first, error.second, ndcg, omp_get_wtime() - start);
+    printf("%d, %f / %f, %f, %f, %f", OuterIter, omp_get_wtime() - start, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
+    eval.evaluate(model);
+    printf("\n");
 
 
     ///////////////////////////
@@ -360,10 +360,10 @@ void Problem::run_altsvm(loss_option_t loss_option = L2_HINGE, double l = 10., i
 		}
 
     // compute performance measure 
-    error = compute_pairwiseError(test, model);
-    ndcg  = compute_ndcg(test, model);
     f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
-    printf("%d, %f, %f, %f, %f / %f, %f, %f / %f\n", OuterIter, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option), error.first, error.second, ndcg, omp_get_wtime() - start);
+    printf("%d, %f / %f, %f, %f, %f", OuterIter, omp_get_wtime() - start, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
+    eval.evaluate(model);
+    printf("\n");
 
     // stopping rule
     if ((f_old - f) / f_old < 1e-5) break;

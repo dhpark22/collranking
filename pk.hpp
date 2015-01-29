@@ -10,13 +10,44 @@
 
 #include "model.hpp"
 
+class Evaluator {
+  
+  Evaluator();
+  virtual void evaluate(const Model&);
+
+};
+
+class EvaluatorBinary : public Evaluator {
+  
+  // please add your structure to store the datasets
+
+  public:
+    void load_files();
+}
+
+class EvaluatorRating : public Evaluator {
+
+  RatingMatrix test;
+
+  public:
+    void load_files();  
+}
+
+void EvaluateRating::evaluate(const Model& model) {
+
+}
+
 struct pkcomp {
 	bool operator() (std::pair<int, double> i, std::pair<int, double> j) {
 		return i.second > j.second;
 	}
 };
 
-std::vector<double> compute_precision (const Model& model, char* train_repo, char* test_repo, std::vector<int>& k) {
+void EvaluateBinary::load_files (char* train_repo, char* test_repo, std::vector<int>& k) {
+
+} 
+
+void EvaluateBinary::evaluate (const Model& model) {
 	std::vector<std::unordered_set<int> > train, test;	
 	train.resize(model.n_users);
 	test.resize(model.n_users);
