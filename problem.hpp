@@ -54,7 +54,7 @@ class Problem {
     Problem(int, int);				// default constructor
     ~Problem();					// default destructor
     void read_data(char*, char*);	// read function
-    void run_altsvm(loss_option_t, double, init_option_t, int);
+    void run_altsvm(Evaluator&, loss_option_t, double, init_option_t, int);
     void run_sgd_random(loss_option_t, double, double, double, init_option_t);
     void run_sgd_nomad_user(double, double, double, init_option_t);
     void run_sgd_nomad_item(double, double, double, init_option_t);
@@ -211,7 +211,7 @@ double Problem::dcd_delta(loss_option_t loss_option, double alpha, double a, dou
 
 }
 
-void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option = L2_HINGE, double l = 10., init_option_t init_option = INIT_RANDOM, int MaxIter = 50, ) {
+void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option = L2_HINGE, double l = 10., init_option_t init_option = INIT_RANDOM, int MaxIter = 50) {
 
   printf("Alternating rankSVM with %d threads.. \n", n_threads);
 
