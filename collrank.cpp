@@ -30,7 +30,7 @@ int main (int argc, char* argv[]) {
 
   printf("Reading data files..\n");
 
-  p.read_data(argv[1], argv[2]);
+  p.read_data(argv[1]);
   omp_set_dynamic(0);
   omp_set_num_threads(n_threads);
 	

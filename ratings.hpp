@@ -17,7 +17,7 @@
 class RatingMatrix {
   public:
     int                   n_users, n_items;
-    std::vector<ratingf>  ratings;
+    std::vector<rating>   ratings;
     std::vector<int>      idx;
 
     int                   ndcg_k = 0;
@@ -76,7 +76,7 @@ void RatingMatrix::read_lsvm(const std::string& filename) {
   n_items = 0;
 
   // Read ratings file for NDCG
-  std::vector<ratingf> ratings_current_user(0);
+  std::vector<rating> ratings_current_user(0);
   std::string user_str, attribute_str;
   std::stringstream attribute_sstr;  
 
@@ -106,11 +106,11 @@ void RatingMatrix::read_lsvm(const std::string& filename) {
         attribute_sstr >> sc;
         pos1 = pos2+1;
 
-        ratings_current_user.push_back(ratingf(uid, iid, sc));
+        ratings_current_user.push_back(rating(uid, iid, sc));
       }
       if (ratings_current_user.size() == 0) break;
          
-      sort(ratings_current_user.begin(), ratings_current_user.end(), ratef_userwise);
+      sort(ratings_current_user.begin(), ratings_current_user.end(), rating_userwise);
  
       for(int j=0; j<ratings_current_user.size(); ++j) ratings.push_back(ratings_current_user[j]);
       idx.push_back(ratings.size());
@@ -137,13 +137,13 @@ void RatingMatrix::compute_dcgmax(int ndcgK) {
 
   ndcg_k = ndcgK;
 
-  std::vector<ratingf> ratings_current_user(0);
+  std::vector<rating> ratings_current_user(0);
 
   dcg_max.resize(n_users, 0.);  
   for(int uid=0; uid<n_users; ++uid) {
     for(int i=idx[uid]; i<idx[uid+1]; ++i) ratings_current_user.push_back(ratings[i]);
     
-    sort(ratings_current_user.begin(), ratings_current_user.end(), ratef_ratingwise);
+    sort(ratings_current_user.begin(), ratings_current_user.end(), rating_scorewise);
     
     for(int k=0; k<ndcg_k; ++k) dcg_max[uid] += (double)(pow(2,ratings_current_user[k].score) - 1.) / log2(k+2); 
     
