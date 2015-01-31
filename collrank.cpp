@@ -46,12 +46,11 @@ int main (int argc, char* argv[]) {
   time = omp_get_wtime(); 
   printf("Running AltSVM with svd init.. \n");  
 	p.run_altsvm(eval, L2_HINGE, lambda, INIT_SVD);
-
+/*
   time = omp_get_wtime(); 
   printf("Running AltSVM with all-ones init.. \n");  
 	p.run_altsvm(eval, L2_HINGE, lambda, INIT_ALLONES);
 
-/*
   time = omp_get_wtime();
   printf("Running Random SGD with SVD init.. \n");
   p.run_sgd_random(L2_HINGE, lambda, 1e-1, 1e-5, INIT_SVD);

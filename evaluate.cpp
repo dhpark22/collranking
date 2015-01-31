@@ -7,6 +7,10 @@
 
 int main (int argc, char* argv[]) {
 
+  if (argc < 2) {
+    printf("Usage : ./evaluate [Test set in lsvm] [Predicted score in lsvm]\n");
+  }
+
   RatingMatrix TestRating, PredictedRating;
 
   std::string test_filename(argv[1]);
@@ -15,12 +19,10 @@ int main (int argc, char* argv[]) {
   TestRating.read_lsvm(test_filename);
   PredictedRating.read_lsvm(pred_filename);
 
+  printf("KT distance : %f\n", compute_pairwiseError(TestRating, PredictedRating));
+
   TestRating.compute_dcgmax(10);
   printf("NDCG : %f\n", compute_ndcg(TestRating, PredictedRating));
- 
-  std::pair<double,double> pairwise_error = compute_pairwiseError(TestRating, PredictedRating);
-  printf("KT distance : %f\n", pairwise_error.first);
-  printf("Error for Top ratings : %f\n", pairwise_error.second);
 
   return 0;
 

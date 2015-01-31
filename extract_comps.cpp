@@ -13,7 +13,8 @@ class CompExtractor {
     int n_users, n_items, n_ratings;
 
     std::vector<rating> ratings;
-    std::ofstream train_file;
+    std::ofstream train_file, train_file_sub, train_file_bgap;
+
 	  std::ofstream train_rating_lsvm, test_rating_lsvm;
     std::ofstream train_rating_prea, test_rating_prea; 
 
@@ -65,11 +66,10 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
     size_t n_comps = n_train;
     if (n_comps > comp_list.size()) n_comps = comp_list.size();
     for(int j=0; j<n_comps; j++) {
-      train_file << new_user_id << ' ' << ratings[comp_list[j].user_id].item_id << 
+      train_file_sub << new_user_id << ' ' << ratings[comp_list[j].user_id].item_id << 
                                    ' ' << ratings[comp_list[j].item_id].item_id << std::endl;
     }
 
-/*
     // Take all possible comparisons for the training ratings
     for(int j1=0; j1<n_train; j1++) {
       for(int j2=j1+1; j2<n_train; j2++) {
@@ -79,9 +79,14 @@ bool CompExtractor::MakeComparisons(int new_user_id) {
         else if (ratings[j1].score < ratings[j2].score)
           train_file << new_user_id << ' ' << ratings[j2].item_id << ' ' << ratings[j1].item_id << std::endl;
 
+        if (ratings[j1].score-1 > ratings[j2].score)
+          train_file_bgap << new_user_id << ' ' << ratings[j1].item_id << ' ' << ratings[j2].item_id << std::endl;
+        else if (ratings[j1].score+1 < ratings[j2].score)
+          train_file_bgap << new_user_id << ' ' << ratings[j2].item_id << ' ' << ratings[j1].item_id << std::endl;
+
       }
     }
-*/
+
 
     // Write training ratings in lsvm format
     std::sort(ratings.begin(), ratings.begin()+n_train, rating_userwise);
@@ -119,11 +124,15 @@ bool CompExtractor::Extract(char *input_filename, char *output_filename) {
   std::string output_header(output_filename);
 
   train_file.open(output_header + "_train_comps.dat");
+  train_file_sub.open(output_header + "_train_comps_sub.dat");
+  train_file_bgap.open(output_header + "_train_comps_bgap.dat");
 
   train_rating_lsvm.open(output_header + "_train_rating.lsvm");
   train_rating_prea.open(output_header + "_train_rating_prea.arff");
   test_rating_lsvm.open (output_header + "_test_rating.lsvm");
   test_rating_prea.open (output_header + "_test_rating_prea.dat");
+
+
 
 	std::string line;
 	int user_id, item_id;
@@ -133,7 +142,7 @@ bool CompExtractor::Extract(char *input_filename, char *output_filename) {
 	for(int i=0; i<n_ratings; i++) {
 		input_file >> user_id >> item_id >> score;
 
-    if (i<5) printf("%d %d %f\n", user_id, item_id, score);
+    //if (i<5) printf("%d %d %f\n", user_id, item_id, score);
 		//getline(input_file, line);
 
 		if (current_user_id < user_id) {
@@ -186,6 +195,8 @@ bool CompExtractor::Extract(char *input_filename, char *output_filename) {
   test_rating_lsvm.close();
   test_rating_prea.close();
   train_file.close();
+  train_file_sub.close();
+  train_file_bgap.close();
 
 	std::cout << "Comparisons for " << new_user_id << " users, " << n_items <<" items extracted" << std::endl;
 }

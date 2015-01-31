@@ -48,10 +48,10 @@ void EvaluatorRating::load_files (char* test_ratings) {
 
 void EvaluatorRating::evaluate(const Model& model) {
   
-  std::pair<double,double> err = compute_pairwiseError(test, model);
+  double err = compute_pairwiseError(test, model);
   double ndcg = compute_ndcg(test, model);
 
-  printf(" %f %f %f ", err.first, err.second, ndcg);
+  printf(" / %f %f ", err, ndcg);
 
 }
 

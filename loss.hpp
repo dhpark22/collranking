@@ -68,12 +68,11 @@ double compute_loss(const Model& model, const RatingMatrix& test) {
   return p;		
 }
 
-std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, const RatingMatrix& PredictedRating) {
+double compute_pairwiseError(const RatingMatrix& TestRating, const RatingMatrix& PredictedRating) {
 
-  std::pair<double,double> comp_error;
   std::vector<double> score(TestRating.n_items);
-  
-  unsigned long long error = 0, n_comps = 0, errorT = 0, n_compsT = 0;
+ 
+  double sum_error = 0.; 
   for(int uid=0; uid<TestRating.n_users; ++uid) {
     score.resize(TestRating.n_items,-1e10);    
     double max_sc = -1.;
@@ -88,6 +87,7 @@ std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, c
 
     max_sc = max_sc - .1;
 
+    unsigned long long error_this = 0, n_comps_this = 0;
     for(int i=TestRating.idx[uid]; i<TestRating.idx[uid+1]-1; ++i) {
       for(int j=i+1; j<TestRating.idx[uid+1]; ++j) {
         int item1_id = TestRating.ratings[i].item_id;
@@ -95,36 +95,23 @@ std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, c
         double item1_sc = TestRating.ratings[i].score;
         double item2_sc = TestRating.ratings[j].score;      
 
-        if ((item1_sc > item2_sc) && (score[item1_id] <= score[item2_id])) ++error;
-        if ((item1_sc < item2_sc) && (score[item1_id] >= score[item2_id])) ++error;
-        ++n_comps;
-
-        if ((item1_sc >= max_sc) && (item2_sc < max_sc)) {
-          if (score[item1_id] <= score[item2_id]) ++errorT;
-          ++n_compsT;
-        }
-
-        if ((item2_sc >= max_sc) && (item1_sc < max_sc)) {
-          if (score[item2_id] >= score[item1_id]) ++errorT;
-          ++n_compsT;
-        }
-    
+        if ((item1_sc > item2_sc) && (score[item1_id] <= score[item2_id])) ++error_this;
+        if ((item1_sc < item2_sc) && (score[item1_id] >= score[item2_id])) ++error_this;
+        ++n_comps_this;
       }
     }
+
+    sum_error += (double)error_this / (double)n_comps_this;
   }
 
-  comp_error.first  = (double)error / (double)n_comps;
-  comp_error.second = (double)errorT / (double)n_compsT; 
-
-  return comp_error;
+  return sum_error / (double)TestRating.n_users; 
 }
 
-std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, const Model& PredictedModel) {
+double compute_pairwiseError(const RatingMatrix& TestRating, const Model& PredictedModel) {
 
-  std::pair<double,double> comp_error;
   std::vector<double> score(TestRating.n_items);
- 
-  unsigned long long error = 0, n_comps = 0, errorT = 0, n_compsT = 0;
+
+  double sum_error = 0.; 
   for(int uid=0; uid<TestRating.n_users; ++uid) {
     score.resize(TestRating.n_items,-1e10);    
     double max_sc = -1.;
@@ -146,6 +133,7 @@ std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, c
 
     max_sc = max_sc - .1;
 
+    unsigned long long error_this = 0, n_comps_this = 0;
     for(int i=TestRating.idx[uid]; i<TestRating.idx[uid+1]-1; ++i) {
       for(int j=i+1; j<TestRating.idx[uid+1]; ++j) {
         int item1_id = TestRating.ratings[i].item_id;
@@ -153,10 +141,10 @@ std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, c
         double item1_sc = TestRating.ratings[i].score;
         double item2_sc = TestRating.ratings[j].score;      
 
-        if ((item1_sc > item2_sc) && (score[item1_id] <= score[item2_id])) ++error;
-        if ((item1_sc < item2_sc) && (score[item1_id] >= score[item2_id])) ++error;
-        ++n_comps;
-
+        if ((item1_sc > item2_sc) && (score[item1_id] <= score[item2_id])) ++error_this;
+        if ((item1_sc < item2_sc) && (score[item1_id] >= score[item2_id])) ++error_this;
+        ++n_comps_this;
+/*
         if ((item1_sc >= max_sc) && (item2_sc < max_sc)) {
           if (score[item1_id] <= score[item2_id]) ++errorT;
           ++n_compsT;
@@ -166,15 +154,17 @@ std::pair<double,double> compute_pairwiseError(const RatingMatrix& TestRating, c
           if (score[item2_id] >= score[item1_id]) ++errorT;
           ++n_compsT;
         }
-    
+*/    
       }
     }
+
+    sum_error += (double)error_this / (double)n_comps_this;
   }
 
-  comp_error.first  = (double)error / (double)n_comps;
-  comp_error.second = (double)errorT / (double)n_compsT; 
+  //comp_error.first  = (double)error / (double)n_comps;
+  //comp_error.second = (double)errorT / (double)n_compsT; 
 
-  return comp_error;
+  return sum_error / (double)TestRating.n_users; 
 }
 
 double compute_ndcg(const RatingMatrix& TestRating, const std::string& Predict_filename) {
