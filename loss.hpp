@@ -15,6 +15,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <omp.h>
 
 #include "elements.hpp"
 #include "model.hpp"
@@ -24,12 +25,13 @@ enum loss_option_t {L1_HINGE, L2_HINGE, LOGISTIC, SQUARED};
 
 // binary classification loss
 double compute_loss(const Model& model, const std::vector<comparison>& TestComps, loss_option_t option) {
-  double p = 0., loss;
+  double p = 0.;
+  #pragma omp parallel for reduction(+:p)
   for(int i=0; i<TestComps.size(); ++i) {
     double *user_vec  = &(model.U[TestComps[i].user_id  * model.rank]);
     double *item1_vec = &(model.V[TestComps[i].item1_id * model.rank]);
     double *item2_vec = &(model.V[TestComps[i].item2_id * model.rank]);
-    double d = 0.;
+    double d = 0., loss;
     for(int j=0; j<model.rank; ++j) {
       d += user_vec[j] * (item1_vec[j] - item2_vec[j]);
     }
@@ -57,6 +59,7 @@ double compute_loss(const Model& model, const std::vector<comparison>& TestComps
 // sum of squares loss
 double compute_loss(const Model& model, const RatingMatrix& test) {
   double p = 0.;
+  #pragma omp parallel for reduction(+:p) 
   for(int i=0; i<test.ratings.size(); ++i) {
     double *user_vec  = &(model.U[test.ratings[i].user_id * model.rank]);
     double *item_vec  = &(model.V[test.ratings[i].item_id * model.rank]);
@@ -72,7 +75,7 @@ double compute_pairwiseError(const RatingMatrix& TestRating, const RatingMatrix&
 
   std::vector<double> score(TestRating.n_items);
  
-  double sum_error = 0.; 
+  double sum_error = 0.;
   for(int uid=0; uid<TestRating.n_users; ++uid) {
     score.resize(TestRating.n_items,-1e10);    
     double max_sc = -1.;
@@ -109,12 +112,11 @@ double compute_pairwiseError(const RatingMatrix& TestRating, const RatingMatrix&
 
 double compute_pairwiseError(const RatingMatrix& TestRating, const Model& PredictedModel) {
 
-  std::vector<double> score(TestRating.n_items);
-
-  double sum_error = 0.; 
+  double sum_error = 0.;
+  #pragma omp parallel for reduction(+:sum_error) 
   for(int uid=0; uid<TestRating.n_users; ++uid) {
-    score.resize(TestRating.n_items,-1e10);    
-    double max_sc = -1.;
+    std::vector<double> score(TestRating.n_items,-1e10);
+    //double max_sc = -1.;
 
     for(int i=TestRating.idx[uid]; i<TestRating.idx[uid+1]; ++i) {
       int iid = TestRating.ratings[i].item_id;
@@ -128,10 +130,10 @@ double compute_pairwiseError(const RatingMatrix& TestRating, const Model& Predic
         score[iid] = -1e10;
       }
 
-      if (TestRating.ratings[i].score > max_sc) max_sc = TestRating.ratings[i].score;
+//      if (TestRating.ratings[i].score > max_sc) max_sc = TestRating.ratings[i].score;
     }
 
-    max_sc = max_sc - .1;
+//    max_sc = max_sc - .1;
 
     unsigned long long error_this = 0, n_comps_this = 0;
     for(int i=TestRating.idx[uid]; i<TestRating.idx[uid+1]-1; ++i) {
