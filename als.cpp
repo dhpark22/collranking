@@ -64,19 +64,20 @@ void als(Model &model, const RatingMatrix &train, const RatingMatrix &test, int 
   double *ysrc = new double[n_max]; 
 
   double f, f_old;
-  std::pair<double,double> perror = compute_pairwiseError(test, model);
+  double perror = compute_pairwiseError(test, model);
   double ndcg = compute_ndcg(test, model);
  
+  double start = omp_get_wtime();
   double loss = compute_loss(model, train); 
   f_old = loss + .5 * lambda * (model.Unormsq() + model.Vnormsq());
-  printf("  0: %f %f %f / %f %f %f\n", f_old, model.Unormsq(), model.Vnormsq(), perror.first, perror.second, ndcg);
+  printf("  0 %f / %f %f %f / %f %f\n", omp_get_wtime() - start, f_old, model.Unormsq(), model.Vnormsq(), perror, ndcg);
 
-  int n;
   for(int iter=1; iter<=nIter; ++iter) {
 
 		// ridge regression for U
+		#pragma omp parallel for
     for(int uid=0; uid<n_users; ++uid) {
-      n = train.idx[uid+1] - train.idx[uid];
+      int n = train.idx[uid+1] - train.idx[uid];
 
 			if (n > 0) {
         for(int j=0; j<n; j++) ysrc[j] = train.ratings[train.idx[uid]+j].score;
@@ -94,8 +95,9 @@ void als(Model &model, const RatingMatrix &train, const RatingMatrix &test, int 
     }
     
 		// ridge regression for M
+		#pragma omp parallel for
     for(int iid=0; iid<n_items; ++iid) {
-      n = iidx[iid+1] - iidx[iid];	
+      int n = iidx[iid+1] - iidx[iid];	
 
       if (n > 0) {
 			  for(int j=0; j<n; j++) ysrc[j] = train.ratings[item_idx[iidx[iid]+j].second].score;
@@ -112,12 +114,12 @@ void als(Model &model, const RatingMatrix &train, const RatingMatrix &test, int 
       }
     }
 
-    std::pair<double,double> perror = compute_pairwiseError(test, model);
+    double perror = compute_pairwiseError(test, model);
     double ndcg = compute_ndcg(test, model);
    
     loss = compute_loss(model, train); 
     f = loss + .5 * lambda * (model.Unormsq() + model.Vnormsq());
-    printf("%3d: %f %f %f %f / %f %f %f\n", iter, f, loss, model.Unormsq(), model.Vnormsq(), perror.first, perror.second, ndcg);
+    printf("%3d %f / %f %f %f %f / %f %f\n", iter, omp_get_wtime() - start, f, loss, model.Unormsq(), model.Vnormsq(), perror, ndcg);
 
     if ((f_old - f) / f_old < 1e-5) break;
     f_old = f;
@@ -148,8 +150,10 @@ int main(int argc, char *argv[]) {
   Model model(n_users, n_items, 10);
 
  	double lambda = atof(argv[3]);
-	int nr_threads = atoi(argv[4]);
-
+	int n_threads = atoi(argv[4]);
+  omp_set_dynamic(0);
+  omp_set_num_threads(n_threads);
+	
   als(model, train, test, 50, lambda);
 
 }

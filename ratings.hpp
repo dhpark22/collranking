@@ -145,7 +145,7 @@ void RatingMatrix::compute_dcgmax(int ndcgK) {
     
     sort(ratings_current_user.begin(), ratings_current_user.end(), rating_scorewise);
     
-    for(int k=0; k<ndcg_k; ++k) dcg_max[uid] += (double)(pow(2,ratings_current_user[k].score) - 1.) / log2(k+2); 
+    for(int k=0; k<ndcg_k; ++k) dcg_max[uid] += (double)(pow(2,ratings_current_user[k].score) - 1.) / log2(k+1); 
     
     ratings_current_user.clear();
   }

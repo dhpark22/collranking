@@ -12,7 +12,7 @@
 #include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "problem.hpp"
+#include "problem2.hpp"
 #include "pk.hpp"
 
 int main (int argc, char* argv[]) {
@@ -40,13 +40,17 @@ int main (int argc, char* argv[]) {
   eval.load_files(argv[2]);
 
   time = omp_get_wtime(); 
+  printf("Running Global Ranking.. \n");  
+	p.run_global(eval, L2_HINGE, lambda);
+
+  time = omp_get_wtime(); 
   printf("Running AltSVM with random init.. \n");  
 	p.run_altsvm(eval, L2_HINGE, lambda, INIT_RANDOM);
-
+/*
   time = omp_get_wtime(); 
   printf("Running AltSVM with svd init.. \n");  
 	p.run_altsvm(eval, L2_HINGE, lambda, INIT_SVD);
-/*
+
   time = omp_get_wtime(); 
   printf("Running AltSVM with all-ones init.. \n");  
 	p.run_altsvm(eval, L2_HINGE, lambda, INIT_ALLONES);
