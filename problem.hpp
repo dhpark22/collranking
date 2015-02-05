@@ -55,6 +55,7 @@ class Problem {
     ~Problem();					// default destructor
     void read_data(char*);	// read function
     void run_altsvm(Evaluator&, loss_option_t, double, init_option_t, int);
+    void run_bpr(EvaluatorBinary&, loss_option_t, double, init_option_t, double);
     void run_sgd_random(loss_option_t, double, double, double, init_option_t);
     void run_sgd_nomad_user(double, double, double, init_option_t);
     void run_sgd_nomad_item(double, double, double, init_option_t);
@@ -178,7 +179,6 @@ void Problem::read_data(char *train_file) {
 
   // memory allocation
   model.allocate(n_users, n_items);
-  printf("read file done\n");
 }	
 
 double Problem::compute_objective() {
@@ -212,6 +212,95 @@ double Problem::dcd_delta(loss_option_t loss_option, double alpha, double a, dou
 
 }
 
+void Problem::run_bpr(EvaluatorBinary& eval, loss_option_t loss_option = LOGISTIC, double l = 10., init_option_t init_option = INIT_RANDOM, double step_size = 0.5) {
+  printf("Baysian personalized ranking with %d threads.. \n", n_threads);
+  double start = omp_get_wtime();
+  double lambda = l;
+  step_size = min(0.5, 0.5 / lambda);
+  initialize(init_option);
+
+  eval.evaluate(model);
+  double timeInterval = omp_get_wtime() - start;
+
+  eval.evaluateAUC(model);
+
+  std::vector<std::vector<int> > Iu(n_users);
+  std::vector<std::vector<int> > noIu(n_users);
+  for (int i = 0; i < n_users; ++i) {
+    for (int j = 0; j < n_items; ++j) {
+      if (eval.train[i].find(j) != eval.train[i].end() ) {
+        Iu[i].push_back(j);
+      } else {
+        noIu[i].push_back(j);
+      }
+    }
+  }
+
+  int n_max_updates = n_train_comps / n_threads;
+  bool converged = false;
+  double last_val = 0.;
+  while (!converged) {
+    double val = 0.;
+    double s1 = omp_get_wtime();
+    for (int iter = 0; iter < 10; ++iter) {
+      #pragma omp parallel
+      {
+        int i_thread = omp_get_thread_num();
+        std::mt19937 gen(n_threads * iter + i_thread);
+        std::uniform_int_distribution<int> randUser(0, n_users - 1);
+
+        for(int n_updates=0; n_updates<1000; ++n_updates) {
+          int uid = randUser(gen);
+          std::uniform_int_distribution<int> randItem1(0, Iu[uid].size() - 1);
+          std::uniform_int_distribution<int> randItem2(0, noIu[uid].size() - 1);
+ 
+          int iid1 = Iu[uid][randItem1(gen)];
+          int iid2 = noIu[uid][randItem2(gen)];
+
+          double *user_vec  = &(model.U[uid  * model.rank]);
+          double *item1_vec = &(model.V[iid1 * model.rank]);
+          double *item2_vec = &(model.V[iid2 * model.rank]);
+    
+          double x = 0.;
+          for (int j = 0; j < model.rank; ++j) {
+            x += user_vec[j] * (item1_vec[j] - item2_vec[j]);;
+          } 
+	  double z = 1.0 / (1 + exp(x) );
+	
+          for (int j = 0; j < model.rank; ++j) {
+            double user_dir = step_size * (z * (item1_vec[j] - item2_vec[j]) - lambda * user_vec[j]);
+            double item1_dir = step_size * (z * user_vec[j] - lambda * item1_vec[j]);
+            double item2_dir = step_size * (-z * user_vec[j] - lambda * item2_vec[j]);
+            user_vec[j] += user_dir;
+            item1_vec[j] += item1_dir;
+            item2_vec[j] += item2_dir;
+          }
+        }
+      }
+      val += model.Unormsq() + model.Vnormsq();
+      //printf ("value is %f\n", val);
+    }
+
+
+    if (val != val) {
+      return run_bpr (eval, loss_option, lambda, init_option, step_size / 5);
+    }
+
+    eval.evaluate(model);
+    timeInterval += omp_get_wtime() - s1;
+    printf("0, %f / %f, %f, %f", timeInterval, val, model.Unormsq(), model.Vnormsq());
+
+    eval.evaluateAUC(model);
+
+    if (abs(val - last_val) / max(val, last_val) < 1e-5) converged = true;
+    last_val = val;
+  }
+}
+
+
+
+
+
 void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option = L2_HINGE, double l = 10., init_option_t init_option = INIT_RANDOM, int MaxIter = 50) {
 
   printf("Alternating rankSVM with %d threads.. \n", n_threads);
@@ -233,17 +322,18 @@ void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option = L2_HINGE, 
   // Alternating RankSVM
   double start = omp_get_wtime();
   double f, f_old;
-
   initialize(init_option);
-
+	
   f_old = compute_loss(model, train, loss_option) + .5 * lambda * (model.Unormsq() + model.Vnormsq());
-  printf("0, %f / %f, %f, %f, %f", omp_get_wtime() - start, f_old, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
   eval.evaluate(model);
+  //eval.evaluateAUC(model);
+  double timeInterval = omp_get_wtime() - start;
+  printf("0, %f / %f, %f, %f, %f", timeInterval, f_old, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
   printf("\n");
 
   double normsq;
   for (int OuterIter = 1; OuterIter <= MaxIter; ++OuterIter) {
-      
+    double s1 = omp_get_wtime();
     ///////////////////////////
     // Learning V 
     ///////////////////////////
@@ -301,11 +391,13 @@ void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option = L2_HINGE, 
 
     // compute performance measure
     f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
-    printf("%d, %f / %f, %f, %f, %f", OuterIter, omp_get_wtime() - start, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
     eval.evaluate(model);
+    //eval.evaluateAUC(model);
+    timeInterval += omp_get_wtime() - s1;
+    printf("%d, %f / %f, %f, %f, %f", OuterIter, timeInterval, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
     printf("\n");
 
-
+    double s2 = omp_get_wtime();
     ///////////////////////////
     // Learning U 
     ///////////////////////////
@@ -355,12 +447,14 @@ void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option = L2_HINGE, 
           user_vec[j] += d;
         }
       }
-		}
+    }
 
     // compute performance measure 
     f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
-    printf("%d, %f / %f, %f, %f, %f", OuterIter, omp_get_wtime() - start, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
     eval.evaluate(model);
+    //eval.evaluateAUC(model);
+    timeInterval += omp_get_wtime() - s2;
+    printf("%d, %f / %f, %f, %f, %f", OuterIter, timeInterval, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
     printf("\n");
 
     // stopping rule

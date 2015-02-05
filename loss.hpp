@@ -56,6 +56,38 @@ double compute_loss(const Model& model, const std::vector<comparison>& TestComps
   return p;		
 }
 
+// loss function for bpr
+double compute_loss_v2(const Model& model, std::vector<std::vector<int> >& Iu, std::vector<std::vector<int> >& noIu) {
+  double p = 0.;
+  #pragma omp parallel for reduction (+ : p)
+  for (int uid = 0; uid < Iu.size(); ++uid) {
+    for (int idx1 = 0; idx1 < Iu[uid].size(); ++idx1) {
+      for (int idx2 = 0; idx2 < noIu[uid].size(); ++idx2) {
+        int iid1 = Iu[uid][idx1];
+        int iid2 = noIu[uid][idx2];
+
+        double *user_vec  = &(model.U[uid  * model.rank]);
+        double *item1_vec = &(model.V[iid1 * model.rank]);
+        double *item2_vec = &(model.V[iid2 * model.rank]);
+
+        double d = 0., loss;
+        for(int j=0; j<model.rank; ++j) {
+          d += user_vec[j] * (item1_vec[j] - item2_vec[j]);
+        }
+        
+        p += log(1. + exp(-d) );
+      }
+    }
+  }
+
+  return p;
+
+
+
+}
+
+
+
 // sum of squares loss
 double compute_loss(const Model& model, const RatingMatrix& test) {
   double p = 0.;

@@ -8,8 +8,8 @@ def pair_cmp(x, y):
 		return x[0] - y[0]
 
 def bin2comp(filename, ntrain):
-	nuser = 6040
-	nitem = 3952
+	nuser = 480189
+	nitem = 17770
 
 	ltable = [[] for i in xrange(nuser)]
 	llen = []

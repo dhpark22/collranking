@@ -37,25 +37,35 @@ int main (int argc, char* argv[]) {
   double time;
 
   EvaluatorBinary eval;
-  int vints[] = {1, 2, 5, 10, 100, 200, 500};
+  int vints[] = {1, 2, 3, 4, 5, 10, 100, 200, 500};
   vector<int> v(vints, vints + sizeof(vints) / sizeof(int) );
-  eval.load_files(argv[2], argv[3], v);
 
-  time = omp_get_wtime(); 
+  double s1 = omp_get_wtime();
+  eval.load_files(argv[2], argv[3], v);
+  double ltime = omp_get_wtime() - s1;
+  printf("loading time is %f\n\n", ltime);
+
+  //time = omp_get_wtime(); 
   printf("Running AltSVM with random init.. \n");  
 	p.run_altsvm(eval, L2_HINGE, lambda, INIT_RANDOM);
+  //time = omp_get_wtime() - time;
+  //printf("overall time %f\n", time);
 
-  time = omp_get_wtime(); 
-  printf("Running AltSVM with svd init.. \n");  
-	p.run_altsvm(eval, L2_HINGE, lambda, INIT_SVD);
+  //-- time = omp_get_wtime(); 
+  //-- printf("Running AltSVM with svd init.. \n");  
+	//-- p.run_altsvm(eval, L2_HINGE, lambda, INIT_SVD);
 
-  time = omp_get_wtime(); 
-  printf("Running AltSVM with all-ones init.. \n");  
-	p.run_altsvm(eval, L2_HINGE, lambda, INIT_ALLONES);
+  //-- time = omp_get_wtime(); 
+  //-- printf("Running AltSVM with all-ones init.. \n");  
+	//-- p.run_altsvm(eval, L2_HINGE, lambda, INIT_ALLONES);
 
   //-- time = omp_get_wtime();
   //-- printf("Running Random SGD with SVD init.. \n");
   //-- p.run_sgd_random(L2_HINGE, lambda, 1e-1, 1e-5, INIT_SVD);
+  //
+  //
+  //printf("Running BPR with random init.. \n");  
+	//p.run_bpr(eval, LOGISTIC, lambda, INIT_RANDOM);
 
 /*
   time = omp_get_wtime();

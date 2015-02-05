@@ -22,11 +22,10 @@ class Evaluator {
 
 
 class EvaluatorBinary : public Evaluator {
-  std::vector<std::unordered_set<int> > train, test;	
-  std::vector<int> k;
-  // please add your structure to store the datasets
-
   public:
+    std::vector<std::unordered_set<int> > train, test;	
+    std::vector<int> k;
+
     void load_files(char*, char*, std::vector<int>&);
     void evaluate(const Model&);
     void evaluateAUC(const Model&);
@@ -127,7 +126,7 @@ void EvaluatorBinary::evaluate (const Model& model) {
 				score += user_vec[l] * item_vec[l];
 			}
 
-			if (pq.size() < 10) {
+			if (pq.size() < 500) {
 				pq.push(std::pair<int, double>(j, score) );
 			} else if (pq.top().second < score) {
 				pq.push(std::pair<int, double>(j, score) );
@@ -139,9 +138,9 @@ void EvaluatorBinary::evaluate (const Model& model) {
 		while (ps) {
 			int item = pq.top().first;
 			if (!test[i].empty() && test[i].find(item) != test[i].end() ) {
-				//if (ps < 501) ++p500;
-				//if (ps < 201) ++p200;
-				//if (ps < 101) ++p100;
+				if (ps < 501) ++p500;
+				if (ps < 201) ++p200;
+				if (ps < 101) ++p100;
 				if (ps < 11) ++p10;
 				if (ps < 6) ++p5;
 				if (ps < 5) ++p4;
@@ -161,9 +160,9 @@ void EvaluatorBinary::evaluate (const Model& model) {
 	printf("k %d, precision %f\n", 4, (double) p4 / 4 / model.n_users);
 	printf("k %d, precision %f\n", 5, (double) p5 / 5 / model.n_users);
 	printf("k %d, precision %f\n", 10, (double) p10 / 10 / model.n_users);
-	//printf("k %d, precision %f\n", 100, (double) p100 / 100 / model.n_users);
-	//printf("k %d, precision %f\n", 200, (double) p200 / 200 / model.n_users);
-	//printf("k %d, precision %f\n", 500, (double) p500 / 500 / model.n_users);
+	printf("k %d, precision %f\n", 100, (double) p100 / 100 / model.n_users);
+	printf("k %d, precision %f\n", 200, (double) p200 / 200 / model.n_users);
+	printf("k %d, precision %f\n", 500, (double) p500 / 500 / model.n_users);
 }
 
 
