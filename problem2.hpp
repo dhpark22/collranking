@@ -131,16 +131,35 @@ double Problem::dcd_delta(loss_option_t loss_option, double alpha, double a, dou
   switch(loss_option) {
     case L1_HINGE:
       // closed-form solution
-      delta = (1. - b) / a; 
-      delta = min(max(0., alpha + delta), C) - alpha;
+      delta = -(b - 1.) / a; 
+      delta = std::min(std::max(0., alpha + delta), C) - alpha;
+      break;
     case L2_HINGE:
       // closed-form solution
-      delta = (1. - b - alpha*.5/C) / (a + .5/C);
-      delta = max(0., alpha + delta) - alpha;      
+      delta = -(b + alpha*.5/C - 1.) / (a + .5/C);
+      delta = std::max(0., alpha + delta) - alpha;    
       break;
     case LOGISTIC:
       // dual coordinate descent step
       delta = 0.;
+      //printf("%f ", alpha);
+
+      for(int i=0; i<3; ++i) {
+        double f = (alpha+delta)*log(alpha+delta) + (C-alpha-delta)*log(C-alpha-delta) + a/2*delta*delta + b*delta; 
+        double d = -(b + a*delta + log(alpha+delta) / log(C-alpha-delta)) / (a + C / (alpha+delta) / (C-alpha-delta));
+
+        //printf("%f,%f", d, -(b + a*delta + log(alpha+delta) / log(C-alpha-delta)));
+  
+        d = std::min(std::max(1e-10, alpha + delta + d), C - 1e-10) - alpha - delta;
+        while(f < (alpha+delta+d)*log(alpha+delta+d) + (C-alpha-delta-d)*log(C-alpha-delta-d) + a/2*(delta+d)*(delta+d) + b*(delta+d)) 
+          d /= 2.;
+
+        delta += d;
+
+        //printf("%f/%f ", alpha+delta, (alpha+delta)*log(alpha+delta) + (C-alpha-delta)*log(C-alpha-delta) + a/2*delta*delta + b*delta - alpha*log(alpha) - (C-alpha)*log(C-alpha));
+      }
+      //printf("\n");
+
       break;
     case SQUARED:
       // dual coordinate descent step
@@ -222,7 +241,7 @@ void Problem::run_global(Evaluator& eval, loss_option_t loss_option = L2_HINGE, 
     eval.evaluate(model);
     printf("\n");
  
-   // stopping rule
+    // stopping rule
     if ((f_old - f) / f_old < 1e-5) break;
     f_old = f;
   
@@ -233,20 +252,23 @@ void Problem::run_global(Evaluator& eval, loss_option_t loss_option = L2_HINGE, 
 
 
 
-void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option = L2_HINGE, double l = 10., init_option_t init_option = INIT_RANDOM, int MaxIter = 30) {
+void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option, double l = 10., init_option_t init_option = INIT_RANDOM, int MaxIter = 30) {
 
   printf("Alternating rankSVM with %d threads.. \n", n_threads);
+  printf("lambda : %f \n", l);
 
   lambda = l;
-  double lambda_user = l / n_users * n_items;
-  double lambda_item = l;
 
   int n_max_updates = n_train_comps/n_threads;
 
   double *alphaV = new double[this->n_train_comps];
   double *alphaU = new double[this->n_train_comps];
-  memset(alphaU, 0, sizeof(double) * this->n_train_comps);
-  memset(alphaV, 0, sizeof(double) * this->n_train_comps);
+  //memset(alphaU, 0, sizeof(double) * this->n_train_comps);
+  //memset(alphaV, 0, sizeof(double) * this->n_train_comps);
+  for(int i=0; i<n_train_comps; ++i) {
+    alphaV[i] = .5/lambda;
+    alphaU[i] = .5/lambda;
+  }
 
   // Alternating RankSVM
   double start = omp_get_wtime();
@@ -255,7 +277,7 @@ void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option = L2_HINGE, 
   initialize(init_option);
 
   f_old = compute_loss(model, train, loss_option) + .5 * lambda * (model.Unormsq() + model.Vnormsq());
-  printf("0, %f / %f, %f, %f, %f", omp_get_wtime() - start, f_old, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
+  printf("0, %f, %f, %f, %f, %f, ", omp_get_wtime() - start, f_old, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
   eval.evaluate(model);
   printf("\n");
 
@@ -263,64 +285,6 @@ void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option = L2_HINGE, 
   for (int OuterIter = 1; OuterIter <= MaxIter; ++OuterIter) {
 
      
-    ///////////////////////////
-    // Learning U 
-    ///////////////////////////
-     
-    // initialize U using the previous alphaU 
-    memset(model.U, 0, sizeof(double) * n_users * model.rank);
-//    memset(alphaU, 0, sizeof(double) * this->n_train_comps);
-    #pragma omp parallel for
-    for(int i=0; i<n_train_comps; ++i) {
-      //if (alphaU[i] > 1e-10) {
-        double *user_vec  = &(model.U[train[i].user_id  * model.rank]);
-        double *item1_vec = &(model.V[train[i].item1_id * model.rank]);
-        double *item2_vec = &(model.V[train[i].item2_id * model.rank]);
-        for(int j=0; j<model.rank; ++j) {
-          user_vec[j] += alphaU[i] * (item1_vec[j] - item2_vec[j]);  
-        }
-      //}
-    }
-
-    // DUAL COORDINATE DESCENT for U
-    #pragma omp parallel
-    {
-      int i_thread = omp_get_thread_num();
-      int uid_from = (n_users * i_thread / n_threads);
-      int uid_to   = (n_users * (i_thread+1) / n_threads);
-
-      std::mt19937 gen(n_threads*OuterIter + i_thread);
-      std::uniform_int_distribution<int> randidx(tridx[uid_from], tridx[uid_to]-1);
-
-      for(int n_updates=0; n_updates<n_max_updates; ++n_updates) {
-        int idx = randidx(gen);
-        double *user_vec  = &(model.U[train[idx].user_id  * model.rank]);
-        double *item1_vec = &(model.V[train[idx].item1_id * model.rank]);
-        double *item2_vec = &(model.V[train[idx].item2_id * model.rank]);
-    
-        double p1 = 0., p2 = 0., d = 0.;
-        for(int j=0; j<model.rank; ++j) {
-          d = item1_vec[j] - item2_vec[j];
-          p1 += user_vec[j] * d;
-          p2 += d*d;
-        } 
-
-        double delta = dcd_delta(loss_option, alphaU[idx], p2, p1, 1./lambda);
-
-        alphaU[idx] += delta;
-        for(int j=0; j<model.rank; ++j) {
-          d = delta * (item1_vec[j] - item2_vec[j]);
-          user_vec[j] += d;
-        }
-      }
-		}
-
-    // compute performance measure 
-    f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
-    printf("%d, %f / %f, %f, %f, %f", OuterIter, omp_get_wtime() - start, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
-    eval.evaluate(model);
-    printf("\n");
-
  
     ///////////////////////////
     // Learning V 
@@ -381,14 +345,71 @@ void Problem::run_altsvm(Evaluator& eval, loss_option_t loss_option = L2_HINGE, 
 
     // compute performance measure
     f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
-    printf("%d, %f / %f, %f, %f, %f", OuterIter, omp_get_wtime() - start, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
+    printf("%d, %f, %f, %f, %f, %f, ", OuterIter, omp_get_wtime() - start, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
     eval.evaluate(model);
     printf("\n");
 
+    ///////////////////////////
+    // Learning U 
+    ///////////////////////////
+     
+    // initialize U using the previous alphaU 
+    memset(model.U, 0, sizeof(double) * n_users * model.rank);
+//    memset(alphaU, 0, sizeof(double) * this->n_train_comps);
+    #pragma omp parallel for
+    for(int i=0; i<n_train_comps; ++i) {
+      //if (alphaU[i] > 1e-10) {
+        double *user_vec  = &(model.U[train[i].user_id  * model.rank]);
+        double *item1_vec = &(model.V[train[i].item1_id * model.rank]);
+        double *item2_vec = &(model.V[train[i].item2_id * model.rank]);
+        for(int j=0; j<model.rank; ++j) {
+          user_vec[j] += alphaU[i] * (item1_vec[j] - item2_vec[j]);  
+        }
+      //}
+    }
 
+    // DUAL COORDINATE DESCENT for U
+    #pragma omp parallel
+    {
+      int i_thread = omp_get_thread_num();
+      int uid_from = (n_users * i_thread / n_threads);
+      int uid_to   = (n_users * (i_thread+1) / n_threads);
 
- 
-   // stopping rule
+      std::mt19937 gen(n_threads*OuterIter + i_thread);
+      std::uniform_int_distribution<int> randidx(tridx[uid_from], tridx[uid_to]-1);
+
+      for(int n_updates=0; n_updates<n_max_updates; ++n_updates) {
+        int idx = randidx(gen);
+        double *user_vec  = &(model.U[train[idx].user_id  * model.rank]);
+        double *item1_vec = &(model.V[train[idx].item1_id * model.rank]);
+        double *item2_vec = &(model.V[train[idx].item2_id * model.rank]);
+    
+        double p1 = 0., p2 = 0., d = 0.;
+        for(int j=0; j<model.rank; ++j) {
+          d = item1_vec[j] - item2_vec[j];
+          p1 += user_vec[j] * d;
+          p2 += d*d;
+        } 
+
+        double delta = dcd_delta(loss_option, alphaU[idx], p2, p1, 1./lambda);
+        
+        if (delta != 0.) {
+          alphaU[idx] += delta;
+          for(int j=0; j<model.rank; ++j) {
+            d = delta * (item1_vec[j] - item2_vec[j]);
+            user_vec[j] += d;
+          }
+        }
+      }
+		}
+
+    // compute performance measure 
+    f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
+    printf("%d, %f, %f, %f, %f, %f, ", OuterIter, omp_get_wtime() - start, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
+    eval.evaluate(model);
+    printf("\n");
+
+    // stopping rule
     if ((f_old - f) / f_old < 1e-5) break;
     f_old = f;
   

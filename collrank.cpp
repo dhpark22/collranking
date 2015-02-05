@@ -40,12 +40,13 @@ int main (int argc, char* argv[]) {
   eval.load_files(argv[2]);
 
   time = omp_get_wtime(); 
-  printf("Running Global Ranking.. \n");  
-	p.run_global(eval, L2_HINGE, lambda);
+  printf("Running AltSVM with l1 hinge loss.. \n");  
+	p.run_altsvm(eval, L1_HINGE, lambda, INIT_RANDOM);
 
-  time = omp_get_wtime(); 
-  printf("Running AltSVM with random init.. \n");  
-	p.run_altsvm(eval, L2_HINGE, lambda, INIT_RANDOM);
+//  time = omp_get_wtime(); 
+//  p.run_sgd_random(eval, LOGISTIC, lambda, 1e-2, 1e-5,  INIT_RANDOM);
+
+
 /*
   time = omp_get_wtime(); 
   printf("Running AltSVM with svd init.. \n");  
