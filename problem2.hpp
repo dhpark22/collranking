@@ -40,6 +40,7 @@ class Problem {
 
     RatingMatrix tr;
 
+    bool sgd_step(const comparison&, loss_option_t, double, double);
     double dcd_delta(loss_option_t, double, double, double, double);
     void de_allocate();					            // deallocate U, V when they are used multiple times by different methods
     void initialize(init_option_t); 
@@ -53,6 +54,7 @@ class Problem {
     void read_data(char*);	// read function
     void run_global(Evaluator&, loss_option_t, double, int); 
     void run_altsvm(Evaluator&, loss_option_t, double, init_option_t, int);
+    void run_sgd_random(Evaluator&, loss_option_t, double, double, double, init_option_t);
     double compute_objective();
 };
 
@@ -443,5 +445,97 @@ void Problem::initialize(init_option_t option) {
   }
 
 }
+
+bool Problem::sgd_step(const comparison& comp, loss_option_t loss_option, double l, double step_size) {
+  double *user_vec  = &(model.U[comp.user_id  * model.rank]);
+  double *item1_vec = &(model.V[comp.item1_id * model.rank]);
+  double *item2_vec = &(model.V[comp.item2_id * model.rank]);
+/*
+  int n_comps_user  = n_comps_by_user[comp.user_id];
+  int n_comps_item1 = n_comps_by_item[comp.item1_id];
+  int n_comps_item2 = n_comps_by_item[comp.item2_id];
+*/
+//  if ((n_comps_user < 1) || (n_comps_item1 < 1) || (n_comps_item2 < 1)) printf("ERROR\n");
+
+  double prod = 0.;
+  for(int k=0; k<model.rank; k++) prod += user_vec[k] * comp.comp * (item1_vec[k] - item2_vec[k]);
+
+  double grad = 0.;
+  switch(loss_option) {
+    case L2_HINGE:
+      grad = (prod<1.) ? 2.*(prod-1.):0.;
+      break;
+    case L1_HINGE:
+      grad = (prod<1.) ? -1.:0.;
+      break;
+    case LOGISTIC:
+      grad = -exp(-prod)/(1.+exp(-prod));
+      break;
+    case SQUARED:
+      grad = 2.*(prod-1.);
+  }
+
+  if (grad != 0.) {
+    for(int k=0; k<model.rank; k++) {
+//	    double user_dir  = step_size * (grad * comp.comp * (item1_vec[k] - item2_vec[k]) + l / (double)n_comps_user * user_vec[k]);
+//	    double item1_dir = step_size * (grad * comp.comp * user_vec[k] + l / (double)n_comps_item1 * item1_vec[k]);
+//      double item2_dir = step_size * (grad * -comp.comp * user_vec[k] + l / (double)n_comps_item2 * item2_vec[k]);
+	    double user_dir  = step_size * (grad * comp.comp * (item1_vec[k] - item2_vec[k]) + l * user_vec[k]);
+	    double item1_dir = step_size * (grad * comp.comp * user_vec[k] + l * item1_vec[k]);
+      double item2_dir = step_size * (grad * -comp.comp * user_vec[k] + l * item2_vec[k]);
+
+
+	    user_vec[k]  -= user_dir;
+	    item1_vec[k] -= item1_dir;
+      item2_vec[k] -= item2_dir;
+    }
+
+	  return true;
+  }
+
+  return false;
+}
+
+void Problem::run_sgd_random(Evaluator& eval, loss_option_t loss_option = L2_HINGE, double lambda = 10., double alpha = 1., double beta = 1., init_option_t option = INIT_RANDOM) {
+
+  printf("Random SGD with %d threads..\n", n_threads);
+
+  double time = omp_get_wtime();
+  this->initialize(option); 
+
+  double f;
+  f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
+  printf("0, %f, %f, %f, %f, %f", omp_get_wtime() - time, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
+
+  int n_max_updates = n_train_comps/1000/n_threads;
+
+  std::vector<int> c(n_train_comps,0);
+
+  for(int icycle=0; icycle<20; ++icycle) {
+    #pragma omp parallel
+    {
+      std::mt19937 gen(n_threads*icycle+omp_get_thread_num());
+      std::uniform_int_distribution<int> randidx(0, n_train_comps-1);
+
+      for(int n_updates=1; n_updates<n_max_updates; ++n_updates) {
+        int idx = randidx(gen);
+        ++c[idx];
+        double stepsize = alpha/(1.+beta*pow((double)((n_updates+n_max_updates*icycle)*n_threads), .5));
+        sgd_step(train[idx], loss_option, lambda, stepsize);
+      }
+    }
+
+    f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
+    printf("%d, %f, %f, %f, %f, %f ", (icycle+1)*n_max_updates, omp_get_wtime() - time, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
+ 
+    eval.evaluate(model);
+    printf("\n");
+ 
+    if (icycle < 5) n_max_updates *= 4;
+  } 
+
+}
+
+
 
 #endif

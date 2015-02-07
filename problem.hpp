@@ -56,7 +56,7 @@ class Problem {
     void read_data(char*);	// read function
     void run_altsvm(Evaluator&, loss_option_t, double, init_option_t, int);
     void run_bpr(EvaluatorBinary&, loss_option_t, double, init_option_t, double);
-    void run_sgd_random(loss_option_t, double, double, double, init_option_t);
+    void run_sgd_random(Evaluator&, loss_option_t, double, double, double, init_option_t);
     void run_sgd_nomad_user(double, double, double, init_option_t);
     void run_sgd_nomad_item(double, double, double, init_option_t);
     double compute_objective();
@@ -565,7 +565,6 @@ void Problem::initialize(init_option_t option) {
 }
 
 
-/*
 bool Problem::sgd_step(const comparison& comp, loss_option_t loss_option, double l, double step_size) {
   double *user_vec  = &(model.U[comp.user_id  * model.rank]);
   double *item1_vec = &(model.V[comp.item1_id * model.rank]);
@@ -612,19 +611,17 @@ bool Problem::sgd_step(const comparison& comp, loss_option_t loss_option, double
   return false;
 }
 
-void Problem::run_sgd_random(loss_option_t loss_option = L2_HINGE, double l = 10., double a = 1., double b = 1., init_option_t option = INIT_RANDOM) {
+void Problem::run_sgd_random(Evaluator& eval, loss_option_t loss_option = L2_HINGE, double l = 10., double a = 1., double b = 1., init_option_t option = INIT_RANDOM) {
 
   printf("Random SGD with %d threads..\n", n_threads);
 
   double time = omp_get_wtime();
   this->initialize(option); 
 
-  std::pair<double,double> error;
-  double ndcg, f;
-  error = compute_pairwiseError(test, model);
-  ndcg  = compute_ndcg(test, model);
-  f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
-  printf("0, %f, %f, %f, %f / %f, %f, %f / %f\n", f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option), error.first, error.second, ndcg, omp_get_wtime() - time);
+  double f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
+  printf("0, %f, %f, %f, %f, %f ", omp_get_wtime() - time, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
+  eval.evaluate(model);
+  printf("\n");
 
   lambda = l;
   alpha  = a;
@@ -634,7 +631,7 @@ void Problem::run_sgd_random(loss_option_t loss_option = L2_HINGE, double l = 10
 
   std::vector<int> c(n_train_comps,0);
 
-  for(int icycle=0; icycle<20; ++icycle) {
+  for(int icycle=0; icycle<500; ++icycle) {
     #pragma omp parallel
     {
       std::mt19937 gen(n_threads*icycle+omp_get_thread_num());
@@ -648,16 +645,16 @@ void Problem::run_sgd_random(loss_option_t loss_option = L2_HINGE, double l = 10
       }
     }
 
-    error = compute_pairwiseError(test, model);
-    ndcg  = compute_ndcg(test, model);
     f = compute_loss(model, train, loss_option) + .5*lambda*(model.Unormsq() + model.Vnormsq());
-    printf("%d, %f, %f, %f, %f / %f, %f, %f / %f\n", (icycle+1)*n_max_updates, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option), error.first, error.second, ndcg, omp_get_wtime() - time);
+    printf("%d, %f, %f, %f, %f, %f", (icycle+1)*n_max_updates, omp_get_wtime() - time, f, model.Unormsq(), model.Vnormsq(), compute_loss(model, train, loss_option));
+    eval.evaluate(model);
+    printf("\n");
   
     if (icycle < 5) n_max_updates *= 4;
   } 
 
 }
-
+/*
 void Problem::run_sgd_nomad_user(double l, double a, double b, init_option_t option) {
 
   printf("NOMAD SGD-user with $d threads..\n", n_threads);
