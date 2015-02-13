@@ -1,12 +1,9 @@
-This is a collaborative work done by Jin Zhang and Dohyung Park.
+Preference Completion: Large-scale Collaborative Ranking from Pairwise Comparison
 
-extract_comps.cpp:		extract preference data from rating files of certain format 
+This repo contains the implementation of the following algorithms:
+- Alternating SVM (AltSVM)
+- Stochastic Gradient Descent (SGD)
+- Global Ranking from All-aggregated pairwise comparisons 
 
-collaborative_ranking.h:	header file for running collaborative ranking 
-
-collaborative_ranking.cpp:	running collaborative ranking with alternative ranking SVM or Stochastic Gradient Descent (parallel version)
-
-collaborative_ranking_seq.cpp:	running collaborative ranking with alternative ranking SVM (sequential version), matrix V are trained with all data once using liblinear
-
-collaborative_ranking_seq2.cpp:	running collaborative ranking with alternative ranking SVM (sequential version), matrix V are trained with individual samples consecutively using liblinear
+Basically, the executable takes pairwise comparisons, but will be updated so that it can take ratings.
 
