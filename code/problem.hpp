@@ -25,9 +25,10 @@ class Problem {
     vector<comparison>   train;
     vector<int>          tridx;
 
+    Problem();
     Problem(loss_option_t, double);				// default constructor
     ~Problem();					// default destructor
-    void read_data(char*);	// read function
+    void read_data(const std::string&);	// read function
   
     int get_nusers() { return n_users; }
     int get_nitems() { return n_items; }
@@ -35,15 +36,16 @@ class Problem {
 };
 
 // may be more parameters can be specified here
+Problem::Problem() {
+}
+
 Problem::Problem (loss_option_t option, double l) : lambda(l), loss_option(option) { 
 }
 
 Problem::~Problem () {
 }
 
-void Problem::read_data(char *train_file) {
-
-  printf("Reading training set %s\n", train_file);
+void Problem::read_data(const std::string &train_file) {
 
   // Prepare to read files
   n_users = n_items = 0;
@@ -80,8 +82,7 @@ void Problem::read_data(char *train_file) {
   }
   f.close();
 
-  printf("Read %d training comparisons\n", n_train_comps);
-  printf("%d users, %d items\n", n_users, n_items);
+  printf("%d users, %d items, %d comparisons\n", n_users, n_items, n_train_comps);
 
 }	
 

@@ -40,8 +40,6 @@ void Model::allocate(int nu, int ni) {
   n_items = ni;
 
   is_allocated = true;
-  printf("%d users x %d items : rank %d model constructed\n", n_users, n_items, rank);
-
 }
 
 void Model::de_allocate () {

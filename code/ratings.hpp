@@ -67,8 +67,6 @@ double RatingMatrix::compute_user_ndcg(int uid, const std::vector<double>& score
 
 void RatingMatrix::read_lsvm(const std::string& filename) {
   
-  std::cout << "Reading " << filename << ".." << std::endl;
-
   ratings.clear();
   idx.clear();
 
@@ -122,7 +120,7 @@ void RatingMatrix::read_lsvm(const std::string& filename) {
 
     n_users = uid;
 
-    printf("Read dataset with %d users, %d items \n", n_users, n_items);
+    printf("%d users, %d items \n", n_users, n_items);
 
   } else {
       printf("Error in opening the extracted rating file!\n");

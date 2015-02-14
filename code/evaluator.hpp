@@ -34,11 +34,11 @@ class EvaluatorRating : public Evaluator {
   RatingMatrix test;
 
   public:
-    void load_files(char*);  
+    void load_files(const std::string&);  
     void evaluate(const Model&);
 };
 
-void EvaluatorRating::load_files (char* test_ratings) {
+void EvaluatorRating::load_files (const std::string& test_ratings) {
 
   test.read_lsvm(test_ratings);
   test.compute_dcgmax(10);

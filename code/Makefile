@@ -1,9 +1,9 @@
 CC=g++
-CFLAG=-std=c++11 -O3 -g -fopenmp
+CFLAG=-std=c++11 -fopenmp
 eigen=~/course/eigen/
 
 col:
-	$(CC) $(CFLAG) -I$(TACC_BOOST_INC) -o collrank collrank.cpp 
+	$(CC) $(CFLAG) -g -O3 -I$(TACC_BOOST_INC) -L$(TACC_BOOST_LIB) -lboost_program_options -o collrank collrank.cpp 
 
 run:
 	./collrank
