@@ -52,4 +52,3 @@ test\_file = ml1m\_test-bin\_ratings.lsvm
 ```
 $ ./collrank
 ```
-
