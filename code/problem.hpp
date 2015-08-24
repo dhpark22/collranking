@@ -93,7 +93,7 @@ double Problem::evaluate(Model& model) {
  
   double f = l + .5*lambda*(u+v);
 
-  printf("%f, %f, %f, %f", f, l, u, v);
+//  printf("%f, %f, %f, %f", f, l, u, v);
 
   return f;
 }

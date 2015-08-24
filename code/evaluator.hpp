@@ -3,6 +3,7 @@
 
 #include <utility>
 #include <vector>
+#include <algorithm>
 #include <queue>
 #include <iostream>
 #include <fstream>
@@ -16,42 +17,42 @@ class Evaluator {
   public: 
     virtual void evaluate(const Model&) {} 
     virtual void evaluateAUC(const Model&) {}
-
+    virtual void load_files(const std::string&, const std::string&, std::vector<int>&) = 0;
+ 
+    std::vector<int> k;
+    int k_max;
 };
 
 class EvaluatorBinary : public Evaluator {
   public:
     std::vector<std::unordered_set<int> > train, test;	
-    std::vector<int> k;
 
-    void load_files(char*, char*, std::vector<int>&);
+    void load_files(const std::string&, const std::string&, std::vector<int>&);
     void evaluate(const Model&);
     void evaluateAUC(const Model&);
 };
 
 class EvaluatorRating : public Evaluator {
-
   RatingMatrix test;
 
   public:
-    void load_files(const std::string&);  
+    void load_files(const std::string&, const std::string&, std::vector<int>&);
     void evaluate(const Model&);
 };
 
-void EvaluatorRating::load_files (const std::string& test_ratings) {
-
-  test.read_lsvm(test_ratings);
+void EvaluatorRating::load_files (const std::string& train_repo, const std::string& test_repo, std::vector<int>& ik) {
+  test.read_lsvm(test_repo);
   test.compute_dcgmax(10);
 
+	k = ik;
+  std::sort(k.begin(), k.end());
+  k_max = k[k.size()-1];
 }
 
 void EvaluatorRating::evaluate(const Model& model) {
-  
   double err = compute_pairwiseError(test, model);
   double ndcg = compute_ndcg(test, model);
-
-  printf(" / %f %f ", err, ndcg);
-
+  printf("%f, %f", err, ndcg);
 }
 
 struct pkcomp {
@@ -66,10 +67,8 @@ struct vcomp {
 	}
 } vobj;
 
-
-
-void EvaluatorBinary::load_files (char* train_repo, char* test_repo, std::vector<int>& ik) {
-  	std::cout << "load file" << std::endl;
+void EvaluatorBinary::load_files (const std::string& train_repo, const std::string& test_repo, std::vector<int>& ik) {
+  std::cout << "load file" << std::endl;
 	std::ifstream tr(train_repo);
 	if (tr) {
 		int uid, iid;
@@ -97,24 +96,18 @@ void EvaluatorBinary::load_files (char* train_repo, char* test_repo, std::vector
 	te.close();
 
 	k = ik;
+  std::sort(k.begin(), k.end());
+  k_max = k[k.size()-1];
 } 
 
 void EvaluatorBinary::evaluate (const Model& model) {
-	int p1 = 0; 
-	int p2 = 0;
-	int p3 = 0;
-	int p4 = 0;
-	int p5 = 0;
-	int p10 = 0;
-	int p100 = 0;
-	int p200 = 0;
-	int p500 = 0;
+  vector<int> precision(k.size(), 0);
 
-	#pragma omp parallel for reduction(+ : p1, p2, p3, p4, p5, p10, p100, p200, p500)
+	#pragma omp parallel
 	for (int i = 0; i < model.n_users; ++i) {
 		std::priority_queue<std::pair<int, double>, std::vector<std::pair<int, double> >, pkcomp> pq;	
 		for (int j = 0; j < model.n_items; ++j) {
-			if (!train[i].empty() && train[i].find(j) != train[i].end() ) {
+			if (!train[i].empty() && train[i].find(j) != train[i].end()) {
 				continue;
 			}
 			double score = 0;
@@ -124,45 +117,30 @@ void EvaluatorBinary::evaluate (const Model& model) {
 				score += user_vec[l] * item_vec[l];
 			}
 
-			if (pq.size() < 500) {
-				pq.push(std::pair<int, double>(j, score) );
+			if (pq.size() < k_max) {
+				pq.push(std::pair<int, double>(j, score));
 			} else if (pq.top().second < score) {
-				pq.push(std::pair<int, double>(j, score) );
+				pq.push(std::pair<int, double>(j, score));
 				pq.pop();	
 			}
 		}
 
-		int ps = pq.size();
-		while (ps) {
-			int item = pq.top().first;
-			if (!test[i].empty() && test[i].find(item) != test[i].end() ) {
-				if (ps < 501) ++p500;
-				if (ps < 201) ++p200;
-				if (ps < 101) ++p100;
-				if (ps < 11) ++p10;
-				if (ps < 6) ++p5;
-				if (ps < 5) ++p4;
-				if (ps < 4) ++p3;
-				if (ps < 3) ++p2;
-				if (ps < 2) ++p1;
-			}			
+    while(!pq.empty()) {
+      int item = pq.top().first;
+      if (!test[i].empty() && test[i].find(item) != test[i].end()) {
+  			for(int j=k.size()-1; (j>=0) && (k[j]>=pq.size()); --j) {
+          #pragma omp atomic
+          ++precision[j];
+        }
+      }
 			pq.pop();
-			--ps;
 		}
 	}
 
-	printf("compute precision at k\n");
-	printf("k %d, precision %f\n", 1, (double) p1 / model.n_users);
-	printf("k %d, precision %f\n", 2, (double) p2 / 2 / model.n_users);
-	printf("k %d, precision %f\n", 3, (double) p3 / 3 / model.n_users);
-	printf("k %d, precision %f\n", 4, (double) p4 / 4 / model.n_users);
-	printf("k %d, precision %f\n", 5, (double) p5 / 5 / model.n_users);
-	printf("k %d, precision %f\n", 10, (double) p10 / 10 / model.n_users);
-	printf("k %d, precision %f\n", 100, (double) p100 / 100 / model.n_users);
-	printf("k %d, precision %f\n", 200, (double) p200 / 200 / model.n_users);
-	printf("k %d, precision %f\n", 500, (double) p500 / 500 / model.n_users);
+  for(int l=0; l<k.size(); ++l) {
+    printf("K%d: %f ", k[l], (double)precision[l] / (double)k[l] / model.n_users);
+  }
 }
-
 
 void EvaluatorBinary::evaluateAUC(const Model& model) {
 	double AUC = 0.;
@@ -206,8 +184,4 @@ void EvaluatorBinary::evaluateAUC(const Model& model) {
 	}
 	printf("AUC %f\n", AUC / num_users);
 }
-
-
-
-
 #endif

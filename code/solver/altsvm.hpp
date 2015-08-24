@@ -23,7 +23,7 @@ class SolverAltSVM : public Solver {
   public:
     SolverAltSVM() : Solver() {}
     SolverAltSVM(init_option_t init, int n_th, int m_it = 0) : Solver(init, m_it, n_th) {}
-    void solve(Problem&, Model&, Evaluator&);
+    void solve(Problem&, Model&, Evaluator*);
 };
 
 
@@ -54,9 +54,7 @@ double SolverAltSVM::dcd_delta(loss_option_t loss_option, double alpha, double a
 
 }
 
-void SolverAltSVM::solve(Problem& prob, Model& model, Evaluator& eval) {
-
-  printf("Alternating rankSVM with %d threads.. \n", n_threads);
+void SolverAltSVM::solve(Problem& prob, Model& model, Evaluator* eval) {
 
   double lambda = prob.lambda;
   
@@ -72,14 +70,15 @@ void SolverAltSVM::solve(Problem& prob, Model& model, Evaluator& eval) {
   memset(alphaV, 0, sizeof(double) * this->n_train_comps);
 
   // Alternating RankSVM
-  double start = omp_get_wtime();
   double f, f_old;
 
+  double time = omp_get_wtime();
   initialize(prob, model, init_option);
+  time = omp_get_wtime() - time;
 
-  printf("0, %f, ", omp_get_wtime() - start);
+  printf("0, %f, ", time);
   f_old = prob.evaluate(model);
-  eval.evaluate(model);
+  eval->evaluate(model);
   printf("\n");
 
   double normsq;
@@ -88,10 +87,11 @@ void SolverAltSVM::solve(Problem& prob, Model& model, Evaluator& eval) {
     ///////////////////////////
     // Learning V 
     ///////////////////////////
-     
+    
+    double time_single_iter = omp_get_wtime(); 
+    
     // initialize using the previous alphaV
     memset(model.V, 0, sizeof(double) * n_items * model.rank);
-//    memset(alphaV, 0, sizeof(double) * this->n_train_comps);
     
     #pragma omp parallel for
     for(int i=0; i<n_train_comps; ++i) {
@@ -141,20 +141,24 @@ void SolverAltSVM::solve(Problem& prob, Model& model, Evaluator& eval) {
       }
 
     }
+    
+    time = time + (omp_get_wtime() - time_single_iter);
 
     // compute performance measure
-    printf("%d, %f, ", OuterIter, omp_get_wtime() - start);
+    printf("%d, %f, ", OuterIter, time);
     f = prob.evaluate(model);
-    eval.evaluate(model);
+    eval->evaluate(model);
     printf("\n");
  
     ///////////////////////////
     // Learning U 
     ///////////////////////////
-     
+    
+    time_single_iter = omp_get_wtime();
+ 
     // initialize U using the previous alphaU 
     memset(model.U, 0, sizeof(double) * n_users * model.rank);
-//    memset(alphaU, 0, sizeof(double) * this->n_train_comps);
+    
     #pragma omp parallel for
     for(int i=0; i<n_train_comps; ++i) {
       //if (alphaU[i] > 1e-10) {
@@ -200,10 +204,12 @@ void SolverAltSVM::solve(Problem& prob, Model& model, Evaluator& eval) {
       }
 		}
 
+    time = time + (omp_get_wtime() - time_single_iter);
+
     // compute performance measure 
-    printf("%d, %f, ", OuterIter, omp_get_wtime() - start);
+    printf("%d, %f, ", OuterIter, time);
     f = prob.evaluate(model);
-    eval.evaluate(model);
+    eval->evaluate(model);
     printf("\n");
  
    // stopping rule

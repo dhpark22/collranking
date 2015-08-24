@@ -24,7 +24,7 @@ public:
   Solver() {}
   Solver(init_option_t init, int m_it, int n_th) : n_users(0), n_items(0), n_train_comps(0), 
                                                    init_option(init), max_iter(m_it), n_threads(n_th) {}
-  virtual void solve(Problem&, Model&, Evaluator& eval) = 0; 
+  virtual void solve(Problem&, Model&, Evaluator* eval) = 0; 
 
 };
 
@@ -39,7 +39,6 @@ void Solver::initialize(Problem& prob, Model& model, init_option_t option) {
 
     case INIT_RANDOM:
   
-    printf("Initialize with random U and V\n"); 
     srand(time(NULL)); 
     for(int i=0; i<n_users*model.rank; i++) model.U[i] = (double)rand() / (double)RAND_MAX / sqrt((double)model.rank);
     for(int i=0; i<n_items*model.rank; i++) model.V[i] = (double)rand() / (double)RAND_MAX / sqrt((double)model.rank);

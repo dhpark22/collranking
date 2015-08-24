@@ -23,7 +23,7 @@ class SolverGlobal : public Solver {
   public:
     SolverGlobal() : Solver() {}
     SolverGlobal(init_option_t init, int n_th, int m_it = 0) : Solver(init, m_it, n_th) {}
-    void solve(Problem&, Model&, Evaluator&);
+    void solve(Problem&, Model&, Evaluator*);
 };
 
 double SolverGlobal::dcd_delta(loss_option_t loss_option, double alpha, double a, double b, double C) {
@@ -53,9 +53,7 @@ double SolverGlobal::dcd_delta(loss_option_t loss_option, double alpha, double a
 
 }
 
-void SolverGlobal::solve(Problem& prob, Model& model, Evaluator& eval) {
-
-  printf("Global ranking from all-aggregated comparisons with %d threads.. \n", n_threads);
+void SolverGlobal::solve(Problem& prob, Model& model, Evaluator* eval) {
 
   double lambda = prob.lambda;
   
@@ -75,7 +73,7 @@ void SolverGlobal::solve(Problem& prob, Model& model, Evaluator& eval) {
 
   printf("0, %f, ", omp_get_wtime() - start);
   f_old = prob.evaluate(model);
-  eval.evaluate(model);
+  eval->evaluate(model);
   printf("\n");
 
   memset(model.V, 0, sizeof(double) * n_items * model.rank);
@@ -136,7 +134,7 @@ void SolverGlobal::solve(Problem& prob, Model& model, Evaluator& eval) {
     // compute performance measure
     printf("%d, %f, ", OuterIter, omp_get_wtime() - start);
     f = prob.evaluate(model);
-    eval.evaluate(model);
+    eval->evaluate(model);
     printf("\n");
  
     // stopping rule

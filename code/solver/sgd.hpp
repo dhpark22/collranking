@@ -31,7 +31,7 @@ class SolverSGD : public Solver {
   public:
     SolverSGD() : Solver() {}
     SolverSGD(double alp, double bet, init_option_t init, int n_th, int m_it = 0) : Solver(init, m_it, n_th), alpha(alp), beta(bet) {}
-    void solve(Problem&, Model&, Evaluator& eval);
+    void solve(Problem&, Model&, Evaluator* eval);
 };
 
 bool SolverSGD::sgd_step(Model& model, const comparison& comp, loss_option_t loss_option, double l, double step_size) {
@@ -80,7 +80,7 @@ bool SolverSGD::sgd_step(Model& model, const comparison& comp, loss_option_t los
   return true;
 }
 
-void SolverSGD::solve(Problem& prob, Model& model, Evaluator& eval) { 
+void SolverSGD::solve(Problem& prob, Model& model, Evaluator* eval) { 
 
   n_users = prob.n_users;
   n_items = prob.n_items;
@@ -94,30 +94,30 @@ void SolverSGD::solve(Problem& prob, Model& model, Evaluator& eval) {
     ++n_comps_by_item[prob.train[i].item2_id];
   } 
  
-  printf("Random SGD with %d threads..\n", n_threads);
-
   double time = omp_get_wtime();
   initialize(prob, model, init_option); 
+  time = omp_get_wtime() - time;
 
   double f;
-  printf("0, %f, ", omp_get_wtime() - time);
+  printf("0, %f, ", time);
   f = prob.evaluate(model);
-  eval.evaluate(model);
+  eval->evaluate(model);
   printf("\n");
 
-  int n_max_updates = n_train_comps/1000/n_threads;
+  int n_max_updates = n_train_comps/n_threads;
 
   bool flag = false;
 
-  for(int icycle=0; icycle<20; ++icycle) {
+  for(int iter=0; iter<max_iter; ++iter) {
+    double time_single_iter = omp_get_wtime();
     #pragma omp parallel
     {
-      std::mt19937 gen(n_threads*icycle+omp_get_thread_num());
+      std::mt19937 gen(n_threads*iter+omp_get_thread_num());
       std::uniform_int_distribution<int> randidx(0, n_train_comps-1);
 
       for(int n_updates=1; n_updates<n_max_updates; ++n_updates) {
         int idx = randidx(gen);
-        double stepsize = alpha/(1.+beta*pow((double)((n_updates+n_max_updates*icycle)*n_threads), .5));
+        double stepsize = alpha/(1.+beta*(double)((n_updates+n_max_updates*iter)*n_threads));
         if (!sgd_step(model, prob.train[idx], prob.loss_option, prob.lambda, stepsize)) {
           flag = true;
           break;
@@ -127,12 +127,12 @@ void SolverSGD::solve(Problem& prob, Model& model, Evaluator& eval) {
 
     if (flag) break;
 
-    printf("%d, %f, ", icycle, omp_get_wtime() - time);
+    time = time + (omp_get_wtime() - time_single_iter);
+    printf("%d, %f, ", iter+1, time);
     f = prob.evaluate(model);
-    eval.evaluate(model);
+    eval->evaluate(model);
     printf("\n");
     
-    if (icycle < 5) n_max_updates *= 4;
   } 
 
 }
