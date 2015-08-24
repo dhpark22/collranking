@@ -40,10 +40,10 @@ int readConf(struct configuration& conf, std::string conFile) {
       if (key == "type") {
         conf.type_str = val;
       }
-      if (key == "train_pairwise_file") {
+      if (key == "train_file") {
         conf.train_comps_file = val;
       }
-      if (key == "train_file") {
+      if (key == "train_rating_file") {
         conf.train_file = val;
       }
       if (key == "test_file") {

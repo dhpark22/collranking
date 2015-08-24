@@ -24,7 +24,7 @@ For comparison with other rating based methods, we provide a Python script (util
     $ python util/num2comp.py data/movielens1m.txt -o ml1m -n 50
     ```
 
-(The script also generates the training ratings which can be used for other methods)
+    (The script also generates the training ratings which can be used for other methods)
 
 3. Set the configuration options. (Example: config/default.cfg)
 
@@ -64,7 +64,7 @@ Please use util/bin2comp.py to divide a (user, item) dataset into a training set
     test_file = ml1m_test-bin_ratings.lsvm
     ```
 
-(train_file_rating is not used for traning models. It is for computing Precision@K where the training user-item pairs should be excluded)
+    (train_file_rating is not used for traning models. It is for computing Precision@K where the training user-item pairs should be excluded)
 
 4. Run the binary.
 
