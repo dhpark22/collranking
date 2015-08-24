@@ -1,5 +1,6 @@
 '''Generate training set and test set files (user, item, rating) triples'''
 from __future__ import print_function
+import os
 import sys
 import random
 import argparse
@@ -45,7 +46,7 @@ def num2comp(filename, output, n_train, n_test):
 
   idx = 0
   user_id = 0
-  g1 = open(output + '_train_comps.dat', 'w')
+  g1 = open(output + '_train.dat', 'w')
   g2 = open(output + '_train_ratings.lsvm', 'w')
   g3 = open(output + '_test_ratings.lsvm', 'w')  
   for u in xrange(1, n_users+1):
@@ -80,13 +81,16 @@ if __name__ == "__main__":
   parser.add_argument('input_file',
                       help="Dataset with user-item-rating triples")
   parser.add_argument('-o', '--output_file', action='store', dest='output',
-                      help="Prefix for the output files")
+                      default="", help="Prefix for the output files")
   parser.add_argument('-n', '--train_items', action='store', dest='n_train', type=int,
-                      default=100, help="Number of training items per user") 
-  parser.add_argument('-t', '--test_itesm', action='store', dest='n_test', type=int,
-                      default=10, help="Minimun number of test items per user")
+                      default=50, help="Number of training items per user (Default 50)") 
+  parser.add_argument('-t', '--test_item', action='store', dest='n_test', type=int,
+                      default=10, help="Minimum number of test items per user (Default 10)")
   parser.add_argument('-s', '--subsample', action='store_true',
-                      help="True if only n_train comparions are subsampled")
+                      help="At most (N_TRAIN) comparions from (N_TRAIN) ratings are sampled for each user")
   args = parser.parse_args()
+
+  if args.output == "":
+    args.output = os.path.splitext(os.path.basename(args.input_file))[0]
 
   num2comp(args.input_file, args.output, args.n_train, args.n_test)
