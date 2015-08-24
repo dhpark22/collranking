@@ -49,9 +49,7 @@ Please use util/bin2comp.py to divide a (user, item) dataset into a training set
 
 2. Run util/bin2comp.py to get training comparisons and test ratings. 
 
-```
-$ python util/bin2comp.py data/movielens1m.txt -o ml1m-bin -c 5000
-```
+    $ python util/bin2comp.py data/movielens1m.txt -o ml1m-bin -c 5000
 
 3. Set the configuration options. (Example: config/default.cfg)
 
