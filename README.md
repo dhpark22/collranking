@@ -20,25 +20,26 @@ For comparison with other rating based methods, we provide a Python script (util
 
 2. Run util/num2comp.py to get training comparisons and test ratings. 
 
-```
-$ python util/num2comp.py data/movielens1m.txt -o ml1m -n 50
-```
+    ```
+    $ python util/num2comp.py data/movielens1m.txt -o ml1m -n 50
+    ```
+
 (The script also generates the training ratings which can be used for other methods)
 
 3. Set the configuration options. (Example: config/default.cfg)
 
-```
-[input]
-type = numeric
-train_file = ml1m_train.dat
-test_file = ml1m_test_ratings.lsvm
-```
+    ```
+    [input]
+    type = numeric
+    train_file = ml1m_train.dat
+    test_file = ml1m_test_ratings.lsvm
+    ```
 
 4. Run the binary. 
 
-```
-$ ./collrank
-```
+    ```
+    $ ./collrank
+    ```
 
 #### Experiments on binary ratings
 Our trained model can also be tested in terms of Precision@K when the test set consists of binary ratings.
@@ -49,21 +50,24 @@ Please use util/bin2comp.py to divide a (user, item) dataset into a training set
 
 2. Run util/bin2comp.py to get training comparisons and test ratings. 
 
+    ```
     $ python util/bin2comp.py data/movielens1m.txt -o ml1m-bin -c 5000
+    ```
 
 3. Set the configuration options. (Example: config/default.cfg)
 
-```
-[input]
-type = binary
-train_file = ml1m-bin_train.dat
-train_file_rating = ml1m-bin_train_ratings.lsvm 
-test_file = ml1m_test-bin_ratings.lsvm
-```
-(train_file_rating is not used for traning. It is for computing Precision@K where the training user-item pairs should be excluded)
+    ```
+    [input]
+    type = binary
+    train_file = ml1m-bin_train.dat
+    train_file_rating = ml1m-bin_train_ratings.lsvm 
+    test_file = ml1m_test-bin_ratings.lsvm
+    ```
+
+(train_file_rating is not used for traning models. It is for computing Precision@K where the training user-item pairs should be excluded)
 
 4. Run the binary.
 
-```
-$ ./collrank
-```
+    ```
+    $ ./collrank
+    ```
