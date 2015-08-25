@@ -5,6 +5,8 @@ This repo contains the implementation of the following algorithms:
 - Stochastic Gradient Descent (SGD)
 - Global Ranking from All-aggregated pairwise comparisons 
 
+We use the non-convex model which is described in (3) of [our paper](http://arxiv.org/pdf/1507.04457v1.pdf).
+
 #### Compilation
 On a UNIX-based system with a C++11 supporting compiler and OpenMP API, compile using the Makefile
 ```
@@ -60,8 +62,8 @@ Please use util/bin2comp.py to divide a (user, item) dataset into a training set
     [input]
     type = binary
     train_file = ml1m-bin_train.dat
-    train_file_rating = ml1m-bin_train_ratings.lsvm 
-    test_file = ml1m_test-bin_ratings.lsvm
+    train_file_rating = ml1m-bin_train_bin.dat
+    test_file = ml1m-bin_test.dat
     ```
 
     (train_file_rating is not used for traning models. It is for computing Precision@K where the training user-item pairs should be excluded)
