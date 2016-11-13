@@ -78,7 +78,7 @@ void SolverAltSVM::solve(Problem& prob, Model& model, Evaluator* eval) {
 
   printf("0, %f, ", time);
   f_old = prob.evaluate(model);
-  eval->evaluate(model);
+  if (eval != NULL) eval->evaluate(model);
   printf("\n");
 
   double normsq;
@@ -147,7 +147,7 @@ void SolverAltSVM::solve(Problem& prob, Model& model, Evaluator* eval) {
     // compute performance measure
     printf("%d, %f, ", OuterIter, time);
     f = prob.evaluate(model);
-    eval->evaluate(model);
+    if (eval != NULL) eval->evaluate(model);
     printf("\n");
  
     ///////////////////////////
@@ -209,7 +209,7 @@ void SolverAltSVM::solve(Problem& prob, Model& model, Evaluator* eval) {
     // compute performance measure 
     printf("%d, %f, ", OuterIter, time);
     f = prob.evaluate(model);
-    eval->evaluate(model);
+    if (eval != NULL) eval->evaluate(model);
     printf("\n");
  
    // stopping rule

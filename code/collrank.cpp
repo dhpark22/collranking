@@ -14,7 +14,7 @@
 
 struct configuration {
   std::string algo = "alt_svm", loss = "l2hinge";
-  std::string type_str = "numeric", train_comps_file, train_file, test_file;
+  std::string type_str = "numeric", train_comps_file, train_file, test_file = "", model_file = "", model_output = "";
   int rank = 10, n_threads = 1, max_iter = 10;
   double lambda = 1000, tol = 1e-5;
   double alpha, beta;
@@ -80,6 +80,9 @@ int readConf(struct configuration& conf, std::string conFile) {
       if (key == "stepsize_beta") {
         conf.beta = std::stod(val);
       }
+      if (key == "model_output") {
+        conf.model_output = val;
+      }
     }
   }
 
@@ -133,44 +136,52 @@ int main (int argc, char* argv[]) {
   // Model definition
   Model model(prob.get_nusers(), prob.get_nitems(), conf.rank);
 
+  if (conf.model_file.length() > 0) {
+    std::cout << "Loading initial model file : " << conf.model_file << std::endl;
+    model.readFile(conf.model_file);
+  }
+
   // Evaluator definition
   Evaluator* eval;
 
-  vector<int> k_list;
+  if (conf.test_file.length() > 0) {
+    vector<int> k_list;
   
-  if (conf.type_str == "numeric") {
-    eval = new EvaluatorRating;
-    // current only ndcg@10 can be computed 
-    k_list.push_back(10);
-  }
-  else if (conf.type_str == "binary") {
-    eval = new EvaluatorBinary;
-    k_list.push_back(1);
-    k_list.push_back(5);
-    k_list.push_back(10);
-    k_list.push_back(100);
-  } 
+    if (conf.type_str == "numeric") {
+      eval = new EvaluatorRating;
+      // current only ndcg@10 can be computed 
+      k_list.push_back(10);
+    }
+    else if (conf.type_str == "binary") {
+      eval = new EvaluatorBinary;
+      k_list.push_back(1);
+      k_list.push_back(5);
+      k_list.push_back(10);
+      k_list.push_back(100);
+    } 
 
-  std::cout << "Reading test set file : " << conf.test_file << std::endl;
-  eval->load_files(conf.train_file, conf.test_file, k_list);
+    std::cout << "Reading test set file : " << conf.test_file << std::endl;
+    eval->load_files(conf.train_file, conf.test_file, k_list);
+  }
 
   // Solver definition
   omp_set_dynamic(0);
   omp_set_num_threads(conf.n_threads);
 
   Solver* mySolver;
+  init_option_t init_option = (conf.model_file.length() > 0) ? INIT_PREDETERMINED : INIT_RANDOM; 
 
   if (conf.algo == "altsvm") {
     printf("AltSVM with %d threads..\n", conf.n_threads);
-    mySolver = new SolverAltSVM(INIT_RANDOM, conf.n_threads, conf.max_iter);
+    mySolver = new SolverAltSVM(init_option, conf.n_threads, conf.max_iter);
   }
   else if (conf.algo == "sgd") {
     printf("SGD with %d threads.. \n", conf.n_threads);
-    mySolver = new SolverSGD(conf.alpha, conf.beta, INIT_RANDOM, conf.n_threads, conf.max_iter);
+    mySolver = new SolverSGD(conf.alpha, conf.beta, init_option, conf.n_threads, conf.max_iter);
   }
   else if (conf.algo == "global") {
     printf("Global ranking with all-aggregated comparisons.. \n");
-    mySolver = new SolverGlobal(INIT_RANDOM, conf.n_threads, conf.max_iter);
+    mySolver = new SolverGlobal(init_option, conf.n_threads, conf.max_iter);
   }
   else {
     std::cerr << "ERROR : provide correct algorithm !\n";
@@ -186,6 +197,8 @@ int main (int argc, char* argv[]) {
 
   mySolver->solve(prob, model, eval);
   delete mySolver;
+
+  if (conf.model_output.length() > 0) model.writeFile(conf.model_output);
 
   return 0;
 }

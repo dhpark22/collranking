@@ -6,7 +6,7 @@
 #include "../model.hpp"
 #include "../evaluator.hpp"
 
-enum init_option_t {INIT_RANDOM, INIT_SVD, INIT_ALLONES};
+enum init_option_t {INIT_PREDETERMINED, INIT_RANDOM, INIT_SVD, INIT_ALLONES};
 
 class Solver {
 
@@ -31,6 +31,10 @@ public:
 void Solver::initialize(Problem& prob, Model& model, init_option_t option) {
 
   switch(option) {
+    case INIT_PREDETERMINED:
+
+    break;
+
     case INIT_ALLONES:
 
     for(int i=0; i<n_users*model.rank; i++) model.U[i] = 1./sqrt((double)model.rank);

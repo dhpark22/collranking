@@ -1,6 +1,8 @@
 #ifndef __MODEL_HPP__
 #define __MODEL_HPP__
 
+#include <fstream>
+
 class Model {
   public:
     bool is_allocated;
@@ -16,6 +18,9 @@ class Model {
  
     double Unormsq();
     double Vnormsq();
+
+    void readFile(const std::string &file);
+    void writeFile(const std::string &file);
 };
 
 double Model::Unormsq() {
@@ -51,6 +56,22 @@ void Model::de_allocate () {
 	this->V = NULL;
 
   is_allocated = false;
+}
+
+void Model::readFile(const std::string &file) {
+  std::ifstream f;
+  f.open(file, std::ios::in | std::ios::binary);
+  f.read(reinterpret_cast<char *>(U), n_users*rank*sizeof(double));
+  f.read(reinterpret_cast<char *>(V), n_items*rank*sizeof(double));
+  f.close();
+}
+
+void Model::writeFile(const std::string &file) {
+  std::ofstream f;
+  f.open(file, std::ios::out | std::ios::binary);
+  f.write(reinterpret_cast<char *>(U), n_users*rank*sizeof(double));
+  f.write(reinterpret_cast<char *>(V), n_items*rank*sizeof(double));
+  f.close();
 }
 
 #endif
